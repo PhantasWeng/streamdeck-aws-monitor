@@ -1,0 +1,47 @@
+{
+	"Name": "AWS Monitor",
+	"Version": "0.1.0.0",
+	"Author": "Phantas Weng",
+	"Actions": [
+		{
+			"Name": "CodePipeline",
+			"UUID": "com.phantas-weng.aws-monitor.codepipeline",
+			"Icon": "imgs/actions/codepipeline/icon",
+			"Tooltip": "Displays the status of a CodePipeline.",
+			"PropertyInspectorPath": "ui/codepipeline.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/codepipeline/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		}
+	],
+	"Category": "AWS Monitor",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Implemented using the AWS SDK to monitor various statuses on AWS.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.5"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "com.phantas-weng.aws-monitor"
+}
