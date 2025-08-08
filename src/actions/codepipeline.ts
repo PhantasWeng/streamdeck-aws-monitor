@@ -1,7 +1,7 @@
-import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppearEvent, SendToPluginEvent, JsonValue, JsonObject, DidReceiveSettingsEvent } from "@elgato/streamdeck";
+import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppearEvent, SendToPluginEvent, JsonValue, JsonObject, DidReceiveSettingsEvent, WillDisappearEvent } from "@elgato/streamdeck";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
-
+import dayjs from 'dayjs';
 import { createCanvas } from 'canvas';
 
 
@@ -29,6 +29,10 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.log('onWillAppear', ev.payload.settings);
 		buildButton(ev);
+	}
+	override async onWillDisappear(ev: WillDisappearEvent<CodePipelineMonitorSettings>): Promise<void> {
+		console.log('onWillDisappear', ev.payload.settings);
+		clearInterval(refreshTimer);
 	}
 	/**
 	 * Listens for the {@link SingletonAction.onKeyDown} event which is emitted by Stream Deck when an action is pressed. Stream Deck provides various events for tracking interaction
@@ -91,7 +95,7 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 	try {
 		const command = new GetPipelineStateCommand({ name: ev.payload.settings.pipelineName });
 		const response = await codePipelineClient.send(command);
-		console.log(response);
+		// console.log(response);
 		const AllStatus = response.stageStates?.map(stage => stage.latestExecution?.status ?? '')
 		const canvas = createCanvas(144, 144);
 		const ctx = canvas.getContext('2d');
@@ -109,6 +113,7 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 			if (status === 'Failed') return { symbol: '✘', color: 'red' };
 			return { symbol: '.', color: 'blue' };
 		}) ?? [];
+		// console.log(statusSymbols);
 
 		ctx.font = '60px sans-serif';
 		ctx.textAlign = 'center';
@@ -118,9 +123,13 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 
 		statusSymbols.forEach(({ symbol, color }) => {
 			ctx.fillStyle = color;
-			ctx.fillText(symbol, startX, 50);
+			ctx.fillText(symbol, startX, 40);
 			startX += 40;
 		});
+
+		ctx.fillStyle = 'white';
+		ctx.font = '22px sans-serif';
+		ctx.fillText(dayjs().format('HH:mm'), 72, 120);
 		ev.action.setImage(canvas.toDataURL());
 
 		// MEMO: 如果所有狀態都成功，則停止刷新
