@@ -9,7 +9,8 @@ import { createCanvas } from 'canvas';
  * An example action class that displays a count that increments by one each time the button is pressed.
 */
 
-let timer: NodeJS.Timeout;
+let pressTimer: NodeJS.Timeout;
+let refreshTimer: NodeJS.Timeout;
 // const sendToPropertyInspector = (e: JsonValue) => streamDeck.ui.current?.sendToPropertyInspector(e)
 
 @action({ UUID: "com.phantas-weng.aws-monitor.codepipeline" })
@@ -27,16 +28,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	}
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.log('onWillAppear', ev.payload.settings);
-		const canvas = createCanvas(144, 144);
-		const ctx = canvas.getContext('2d');
-
-		ctx.textBaseline = 'top';
-
-		ctx.fillStyle = 'white'
-		ctx.font = '20px sans-serif bold'
-		ctx.textAlign = 'center';
-		ctx.fillText(ev.payload.settings.displayName, 72, 20, 124)
-		ev.action.setImage(canvas.toDataURL());
+		buildButton(ev);
 	}
 	/**
 	 * Listens for the {@link SingletonAction.onKeyDown} event which is emitted by Stream Deck when an action is pressed. Stream Deck provides various events for tracking interaction
@@ -46,21 +38,49 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	 */
 	override async onKeyDown(ev: KeyDownEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.log('onKeyDown');
-		timer = setTimeout(() => {
+		pressTimer = setTimeout(() => {
 			console.log('長按超過1.3秒');
 			streamDeck.system.openUrl(`https://${ev.payload.settings.region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${ev.payload.settings.pipelineName}/view?region=${ev.payload.settings.region}`);
 			return;
 		}, 1300);
-		getPipelineState(ev);
+		buildButton(ev);
 		return;
 	}
 	override async onKeyUp(ev: KeyUpEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.log('onKeyUp');
-		clearTimeout(timer);
+		clearTimeout(pressTimer);
 	}
 }
 
-const getPipelineState = async (ev: KeyDownEvent<CodePipelineMonitorSettings>) => {
+const buildButton = (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
+	if (Object.keys(ev.payload.settings).length === 5 && Object.values(ev.payload.settings).every(value => value !== '')) {
+		getPipelineState(ev);
+	} else {
+		initButton(ev);
+	}
+}
+
+const initButton = (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
+	const canvas = createCanvas(144, 144);
+	const ctx = canvas.getContext('2d');
+
+	ctx.textBaseline = 'top';
+
+	ctx.fillStyle = 'white'
+	ctx.font = '20px sans-serif bold'
+	ctx.textAlign = 'center';
+	if (ev.payload.settings.displayName) {
+		ctx.fillText(ev.payload.settings.displayName, 72, 20, 124)
+	} else {
+		ctx.fillText('AWS CodePipeline', 72, 20, 124)
+		ctx.font = '18px sans-serif'
+		ctx.fillStyle = 'orange'
+		ctx.fillText('Not Configured', 72, 70)
+	}
+	ev.action.setImage(canvas.toDataURL());
+}
+
+const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
 	process.env.AWS_ACCESS_KEY_ID = ev.payload.settings.AWS_ACCESS_KEY_ID;
 	process.env.AWS_SECRET_ACCESS_KEY = ev.payload.settings.AWS_SECRET_ACCESS_KEY;
 
@@ -94,16 +114,29 @@ const getPipelineState = async (ev: KeyDownEvent<CodePipelineMonitorSettings>) =
 		ctx.textAlign = 'center';
 
 		const combinedWidth = statusSymbols.length * 30;
-		let startX = 72 - combinedWidth / 2 + 15;
+		let startX = 66 - combinedWidth / 2 + 15;
 
 		statusSymbols.forEach(({ symbol, color }) => {
 			ctx.fillStyle = color;
-			ctx.fillText(symbol, startX, 60);
+			ctx.fillText(symbol, startX, 50);
 			startX += 40;
 		});
 		ev.action.setImage(canvas.toDataURL());
+
+		// MEMO: 如果所有狀態都成功，則停止刷新
+		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
+		if (AllStatus?.every(status => status === 'Succeeded')) {
+			clearInterval(refreshTimer);
+			console.log('All Succeeded, stop refresh');
+		} else {
+			clearInterval(refreshTimer);
+			refreshTimer = setInterval(() => {
+				getPipelineState(ev);
+			}, 60000);
+		}
 	} catch (error) {
 		console.error(error);
+		clearInterval(refreshTimer);
 		ev.action.showAlert();
 	}
 }
