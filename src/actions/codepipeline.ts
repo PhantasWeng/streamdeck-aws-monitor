@@ -9,8 +9,9 @@ import { createCanvas } from 'canvas';
  * An example action class that displays a count that increments by one each time the button is pressed.
 */
 
-let pressTimer: NodeJS.Timeout;
-let refreshTimer: NodeJS.Timeout;
+// 使用 Map 來追蹤每個按鈕實例的計時器，避免全域變數被共用
+const pressTimers = new Map<string, NodeJS.Timeout>();
+const refreshTimers = new Map<string, NodeJS.Timeout>();
 // const sendToPropertyInspector = (e: JsonValue) => streamDeck.ui.current?.sendToPropertyInspector(e)
 
 @action({ UUID: "com.phantas-weng.aws-monitor.codepipeline" })
@@ -24,15 +25,21 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		ev.action.setSettings(ev.payload.settings);
 	}
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, JsonObject>): void | Promise<void> {
-		console.log('onSendToPlugin', ev);
+		console.debug('onSendToPlugin');
 	}
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.log('onWillAppear', ev.payload.settings);
+		console.debug('onWillAppear');
 		buildButton(ev);
 	}
 	override async onWillDisappear(ev: WillDisappearEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.log('onWillDisappear', ev.payload.settings);
-		clearInterval(refreshTimer);
+		console.debug('onWillDisappear');
+		// 清理該按鈕實例的計時器
+		const actionId = ev.action.id;
+		const refreshTimer = refreshTimers.get(actionId);
+		if (refreshTimer) {
+			clearInterval(refreshTimer);
+			refreshTimers.delete(actionId);
+		}
 	}
 	/**
 	 * Listens for the {@link SingletonAction.onKeyDown} event which is emitted by Stream Deck when an action is pressed. Stream Deck provides various events for tracking interaction
@@ -41,18 +48,27 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	 * settings using `setSettings` and `getSettings`.
 	 */
 	override async onKeyDown(ev: KeyDownEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.log('onKeyDown');
-		pressTimer = setTimeout(() => {
-			console.log('長按超過1.3秒');
+		console.debug('onKeyDown');
+		const actionId = ev.action.id;
+		const pressTimer = setTimeout(() => {
+			console.debug('長按超過1.3秒');
 			streamDeck.system.openUrl(`https://${ev.payload.settings.region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${ev.payload.settings.pipelineName}/view?region=${ev.payload.settings.region}`);
+			// 清理計時器
+			pressTimers.delete(actionId);
 			return;
 		}, 1300);
+		pressTimers.set(actionId, pressTimer);
 		buildButton(ev);
 		return;
 	}
 	override async onKeyUp(ev: KeyUpEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.log('onKeyUp');
-		clearTimeout(pressTimer);
+		console.debug('onKeyUp');
+		const actionId = ev.action.id;
+		const pressTimer = pressTimers.get(actionId);
+		if (pressTimer) {
+			clearTimeout(pressTimer);
+			pressTimers.delete(actionId);
+		}
 	}
 }
 
@@ -95,7 +111,7 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 	try {
 		const command = new GetPipelineStateCommand({ name: ev.payload.settings.pipelineName });
 		const response = await codePipelineClient.send(command);
-		// console.log(response);
+		console.info('AWS CodePipeline Response', response);
 		const AllStatus = response.stageStates?.map(stage => stage.latestExecution?.status ?? '')
 		const canvas = createCanvas(144, 144);
 		const ctx = canvas.getContext('2d');
@@ -113,7 +129,6 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 			if (status === 'Failed') return { symbol: '✘', color: 'red' };
 			return { symbol: '.', color: 'blue' };
 		}) ?? [];
-		// console.log(statusSymbols);
 
 		ctx.font = '60px sans-serif';
 		ctx.textAlign = 'center';
@@ -129,23 +144,41 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 
 		ctx.fillStyle = 'white';
 		ctx.font = '22px sans-serif';
-		ctx.fillText(dayjs().format('HH:mm'), 72, 120);
-		ev.action.setImage(canvas.toDataURL());
+		ctx.fillText(dayjs().format('HH:mm'), 60, 120);
 
 		// MEMO: 如果所有狀態都成功，則停止刷新
 		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
+		const actionId = ev.action.id;
 		if (AllStatus?.every(status => status === 'Succeeded')) {
-			clearInterval(refreshTimer);
-			console.log('All Succeeded, stop refresh');
+			const refreshTimer = refreshTimers.get(actionId);
+			if (refreshTimer) {
+				clearInterval(refreshTimer);
+				refreshTimers.delete(actionId);
+			}
+			ctx.fillText('✔︎', 105, 114)
+			console.debug('All Succeeded, stop refresh');
 		} else {
-			clearInterval(refreshTimer);
-			refreshTimer = setInterval(() => {
+			// 清理舊的計時器
+			const oldRefreshTimer = refreshTimers.get(actionId);
+			if (oldRefreshTimer) {
+				clearInterval(oldRefreshTimer);
+			}
+			// 設定新的計時器
+			const newRefreshTimer = setInterval(() => {
 				getPipelineState(ev);
 			}, 60000);
+			refreshTimers.set(actionId, newRefreshTimer);
+			ctx.fillText('✽', 105, 114)
 		}
+		ev.action.setImage(canvas.toDataURL());
 	} catch (error) {
 		console.error(error);
-		clearInterval(refreshTimer);
+		const actionId = ev.action.id;
+		const refreshTimer = refreshTimers.get(actionId);
+		if (refreshTimer) {
+			clearInterval(refreshTimer);
+			refreshTimers.delete(actionId);
+		}
 		ev.action.showAlert();
 	}
 }
