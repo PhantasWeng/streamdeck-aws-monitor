@@ -73,6 +73,12 @@ A Stream Deck plugin that provides real-time monitoring of AWS services, startin
    ```
    This will automatically rebuild and restart the plugin when changes are made.
 
+3. **Launch Stream Deck in debug mode** (important for viewing console logs):
+   ```bash
+   open -a "Elgato Stream Deck" --args -debug
+   ```
+   This opens Stream Deck with debug mode enabled, allowing you to view plugin logs in the developer console.
+
 ### Installing Development Plugin
 
 To test the plugin during development, create a symbolic link from your project to the Stream Deck plugins directory:
