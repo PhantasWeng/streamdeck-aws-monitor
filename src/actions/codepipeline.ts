@@ -13,6 +13,7 @@ type CodePipelineMonitorSettings = {
 	region: string;
 	pipelineName: string;
 	displayName: string;
+	logGroupName?: string; // 可選：CloudWatch Log Group 名稱
 };
 
 type ButtonEvent = WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>;
@@ -21,19 +22,27 @@ type ButtonEvent = WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<C
 const CANVAS_SIZE = 144;
 const LONG_PRESS_DURATION = 1300;
 const REFRESH_INTERVAL = 60000;
-const SETTINGS_KEYS_COUNT = 5;
+const DOUBLE_CLICK_THRESHOLD = 500; // 雙擊閾值 (ms)
+
+// 必填欄位
+const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
+	'AWS_ACCESS_KEY_ID',
+	'AWS_SECRET_ACCESS_KEY',
+	'region',
+	'pipelineName',
+	'displayName'
+];
 
 // 使用 Map 來追蹤每個按鈕實例的計時器，避免全域變數被共用
 const pressTimers = new Map<string, NodeJS.Timeout>();
 const refreshTimers = new Map<string, NodeJS.Timeout>();
-// const sendToPropertyInspector = (e: JsonValue) => streamDeck.ui.current?.sendToPropertyInspector(e)
+const lastClickTimes = new Map<string, number>(); // 追蹤上次點擊時間，用於雙擊檢測
 
 /**
- * 檢查設定是否完整
+ * 檢查必填設定是否完整（不包含 logGroupName）
  */
-const isConfigured = (settings: CodePipelineMonitorSettings): boolean => {
-	return Object.keys(settings).length === SETTINGS_KEYS_COUNT &&
-		Object.values(settings).every(value => value !== '');
+const hasRequiredSettings = (settings: CodePipelineMonitorSettings): boolean => {
+	return REQUIRED_FIELDS.every(field => settings[field] && settings[field] !== '');
 };
 
 /**
@@ -75,6 +84,14 @@ const getAwsConsoleUrl = (settings: CodePipelineMonitorSettings): string => {
 };
 
 /**
+ * 取得 CloudWatch Log Group URL
+ */
+const getCloudWatchLogGroupUrl = (settings: CodePipelineMonitorSettings): string => {
+	const encodedLogGroup = encodeURIComponent(settings.logGroupName || '');
+	return `https://${settings.region}.console.aws.amazon.com/cloudwatch/home?region=${settings.region}#logsV2:log-groups/log-group/${encodedLogGroup}`;
+};
+
+/**
  * An example action class that displays a count that increments by one each time the button is pressed.
 */
 @action({ UUID: "com.phantas-weng.aws-monitor.codepipeline" })
@@ -109,7 +126,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		streamDeck.logger.debug('onKeyDown');
 		const actionId = ev.action.id;
 		// 只有在設定完整時才設置長按計時器
-		if (isConfigured(ev.payload.settings)) {
+		if (hasRequiredSettings(ev.payload.settings)) {
 			const pressTimer = setTimeout(() => {
 				streamDeck.logger.debug('長按超過1.3秒');
 				streamDeck.system.openUrl(getAwsConsoleUrl(ev.payload.settings));
@@ -129,12 +146,35 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		if (pressTimer) {
 			clearTimeout(pressTimer);
 			pressTimers.delete(actionId);
+
+			// 檢測雙擊
+			if (hasRequiredSettings(ev.payload.settings)) {
+				const now = Date.now();
+				const lastClickTime = lastClickTimes.get(actionId) || 0;
+
+				if (now - lastClickTime < DOUBLE_CLICK_THRESHOLD) {
+					// 雙擊
+					lastClickTimes.delete(actionId);
+					if (ev.payload.settings.logGroupName) {
+						// 有設定 logGroupName：開啟 CloudWatch Log Group
+						streamDeck.logger.debug('雙擊，開啟 CloudWatch');
+						streamDeck.system.openUrl(getCloudWatchLogGroupUrl(ev.payload.settings));
+					} else {
+						// 沒有設定 logGroupName：顯示 alert
+						streamDeck.logger.debug('雙擊，但未設定 logGroupName');
+						ev.action.showAlert();
+					}
+				} else {
+					// 記錄點擊時間
+					lastClickTimes.set(actionId, now);
+				}
+			}
 		}
 	}
 }
 
 const buildButton = (ev: ButtonEvent): void => {
-	if (isConfigured(ev.payload.settings)) {
+	if (hasRequiredSettings(ev.payload.settings)) {
 		getPipelineState(ev);
 	} else {
 		renderInitButton(ev);

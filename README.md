@@ -11,6 +11,7 @@ A Stream Deck plugin that provides real-time monitoring of AWS services, startin
 - **Real-time CodePipeline Monitoring**: Monitor the status of your AWS CodePipeline deployments
 - **Visual Status Indicators**: Clear visual representation of pipeline stages with color-coded status symbols
 - **Quick Access**: Long-press (1.3 seconds) to open the pipeline in AWS Console
+- **CloudWatch Integration**: Double-click to open CloudWatch Log Group (optional)
 - **Multi-region Support**: Support for all AWS regions
 - **Custom Display Names**: Set custom names for your pipeline buttons
 
@@ -106,8 +107,9 @@ You'll need to provide your AWS credentials in the plugin settings:
 1. **Access Key ID**: Your AWS access key ID
 2. **Secret Access Key**: Your AWS secret access key
 3. **Region**: Select the AWS region where your pipeline is located
-4. **Display Name**: A custom name for the button (optional)
+4. **Display Name**: A custom name for the button
 5. **Pipeline Name**: The name of your CodePipeline
+6. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
 
 ### IAM Permissions
 
@@ -141,6 +143,7 @@ Your AWS credentials need the following permissions:
 
 3. **Monitor your pipeline**:
    - **Short press**: Refresh pipeline status
+   - **Double-click**: Open CloudWatch Log Group (requires Log Group Name configured)
    - **Long press (1.3s)**: Open pipeline in AWS Console
 
 ## Building
