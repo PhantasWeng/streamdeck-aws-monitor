@@ -2,18 +2,82 @@ import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppe
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
 import dayjs from 'dayjs';
-import { createCanvas } from 'canvas';
+import { createCanvas, Canvas, CanvasRenderingContext2D } from 'canvas';
 
 
 /**
- * An example action class that displays a count that increments by one each time the button is pressed.
-*/
+ * Settings for {@link CodePipelineMonitor}.
+ */
+type CodePipelineMonitorSettings = {
+	AWS_ACCESS_KEY_ID: string;
+	AWS_SECRET_ACCESS_KEY: string;
+	region: string;
+	pipelineName: string;
+	displayName: string;
+};
+
+type ButtonEvent = WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>;
+
+// 常數
+const CANVAS_SIZE = 144;
+const LONG_PRESS_DURATION = 1300;
+const REFRESH_INTERVAL = 60000;
+const SETTINGS_KEYS_COUNT = 5;
 
 // 使用 Map 來追蹤每個按鈕實例的計時器，避免全域變數被共用
 const pressTimers = new Map<string, NodeJS.Timeout>();
 const refreshTimers = new Map<string, NodeJS.Timeout>();
 // const sendToPropertyInspector = (e: JsonValue) => streamDeck.ui.current?.sendToPropertyInspector(e)
 
+/**
+ * 檢查設定是否完整
+ */
+const isConfigured = (settings: CodePipelineMonitorSettings): boolean => {
+	return Object.keys(settings).length === SETTINGS_KEYS_COUNT &&
+		Object.values(settings).every(value => value !== '');
+};
+
+/**
+ * 建立 Canvas 並初始化基本設定
+ */
+const createButtonCanvas = (): { canvas: Canvas; ctx: CanvasRenderingContext2D } => {
+	const canvas = createCanvas(CANVAS_SIZE, CANVAS_SIZE);
+	const ctx = canvas.getContext('2d');
+	ctx.textBaseline = 'top';
+	return { canvas, ctx };
+};
+
+/**
+ * 繪製標題文字
+ */
+const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
+	ctx.fillStyle = 'white';
+	ctx.font = '20px sans-serif bold';
+	ctx.textAlign = 'center';
+	ctx.fillText(title, 72, 20, 124);
+};
+
+/**
+ * 清理刷新計時器
+ */
+const clearRefreshTimer = (actionId: string): void => {
+	const refreshTimer = refreshTimers.get(actionId);
+	if (refreshTimer) {
+		clearInterval(refreshTimer);
+		refreshTimers.delete(actionId);
+	}
+};
+
+/**
+ * 取得 AWS Console URL
+ */
+const getAwsConsoleUrl = (settings: CodePipelineMonitorSettings): string => {
+	return `https://${settings.region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${settings.pipelineName}/view?region=${settings.region}`;
+};
+
+/**
+ * An example action class that displays a count that increments by one each time the button is pressed.
+*/
 @action({ UUID: "com.phantas-weng.aws-monitor.codepipeline" })
 export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSettings> {
 	/**
@@ -24,7 +88,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<CodePipelineMonitorSettings>): void | Promise<void> {
 		ev.action.setSettings(ev.payload.settings);
 	}
-	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, JsonObject>): void | Promise<void> {
+	override onSendToPlugin(_ev: SendToPluginEvent<JsonValue, JsonObject>): void | Promise<void> {
 		console.debug('onSendToPlugin');
 	}
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
@@ -34,12 +98,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	override async onWillDisappear(ev: WillDisappearEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.debug('onWillDisappear');
 		// 清理該按鈕實例的計時器
-		const actionId = ev.action.id;
-		const refreshTimer = refreshTimers.get(actionId);
-		if (refreshTimer) {
-			clearInterval(refreshTimer);
-			refreshTimers.delete(actionId);
-		}
+		clearRefreshTimer(ev.action.id);
 	}
 	/**
 	 * Listens for the {@link SingletonAction.onKeyDown} event which is emitted by Stream Deck when an action is pressed. Stream Deck provides various events for tracking interaction
@@ -50,16 +109,19 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	override async onKeyDown(ev: KeyDownEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.debug('onKeyDown');
 		const actionId = ev.action.id;
-		const pressTimer = setTimeout(() => {
-			console.debug('長按超過1.3秒');
-			streamDeck.system.openUrl(`https://${ev.payload.settings.region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${ev.payload.settings.pipelineName}/view?region=${ev.payload.settings.region}`);
-			// 清理計時器
-			pressTimers.delete(actionId);
-			return;
-		}, 1300);
-		pressTimers.set(actionId, pressTimer);
-		buildButton(ev);
-		return;
+		// 只有在設定完整時才設置長按計時器
+		if (isConfigured(ev.payload.settings)) {
+			const pressTimer = setTimeout(() => {
+				console.debug('長按超過1.3秒');
+				streamDeck.system.openUrl(getAwsConsoleUrl(ev.payload.settings));
+				// 清理計時器
+				pressTimers.delete(actionId);
+			}, LONG_PRESS_DURATION);
+			pressTimers.set(actionId, pressTimer);
+			buildButton(ev);
+		} else {
+			ev.action.showAlert();
+		}
 	}
 	override async onKeyUp(ev: KeyUpEvent<CodePipelineMonitorSettings>): Promise<void> {
 		console.debug('onKeyUp');
@@ -72,35 +134,70 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	}
 }
 
-const buildButton = (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
-	if (Object.keys(ev.payload.settings).length === 5 && Object.values(ev.payload.settings).every(value => value !== '')) {
+const buildButton = (ev: ButtonEvent): void => {
+	if (isConfigured(ev.payload.settings)) {
 		getPipelineState(ev);
 	} else {
-		initButton(ev);
+		renderInitButton(ev);
 	}
-}
+};
 
-const initButton = (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
-	const canvas = createCanvas(144, 144);
-	const ctx = canvas.getContext('2d');
+const renderInitButton = (ev: ButtonEvent): void => {
+	const { canvas, ctx } = createButtonCanvas();
 
-	ctx.textBaseline = 'top';
-
-	ctx.fillStyle = 'white'
-	ctx.font = '20px sans-serif bold'
-	ctx.textAlign = 'center';
 	if (ev.payload.settings.displayName) {
-		ctx.fillText(ev.payload.settings.displayName, 72, 20, 124)
+		drawTitle(ctx, ev.payload.settings.displayName);
 	} else {
-		ctx.fillText('AWS CodePipeline', 72, 20, 124)
-		ctx.font = '18px sans-serif'
-		ctx.fillStyle = 'orange'
-		ctx.fillText('Not Configured', 72, 70)
+		ctx.fillStyle = 'white';
+		ctx.font = '20px sans-serif bold';
+		ctx.textAlign = 'center';
+		ctx.fillText('AWS CodePipeline', 72, 20, 124);
+		ctx.font = '18px sans-serif';
+		ctx.fillStyle = 'orange';
+		ctx.fillText('Not Configured', 72, 70);
 	}
 	ev.action.setImage(canvas.toDataURL());
-}
+};
 
-const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>) => {
+/**
+ * 將 pipeline 狀態轉換為顯示符號
+ */
+const getStatusSymbol = (status: string): { symbol: string; color: string } => {
+	if (status === 'Succeeded') return { symbol: '✔', color: 'green' };
+	if (status === 'Failed') return { symbol: '✘', color: 'red' };
+	return { symbol: '.', color: 'blue' };
+};
+
+/**
+ * 繪製狀態符號
+ */
+const drawStatusSymbols = (ctx: CanvasRenderingContext2D, statuses: string[]): void => {
+	const statusSymbols = statuses.map(getStatusSymbol);
+
+	ctx.font = '60px sans-serif';
+	ctx.textAlign = 'center';
+
+	const combinedWidth = statusSymbols.length * 30;
+	let startX = 66 - combinedWidth / 2 + 15;
+
+	statusSymbols.forEach(({ symbol, color }) => {
+		ctx.fillStyle = color;
+		ctx.fillText(symbol, startX, 40);
+		startX += 40;
+	});
+};
+
+/**
+ * 繪製底部時間和狀態指示器
+ */
+const drawFooter = (ctx: CanvasRenderingContext2D, isAllSucceeded: boolean): void => {
+	ctx.fillStyle = 'white';
+	ctx.font = '22px sans-serif';
+	ctx.fillText(dayjs().format('HH:mm'), 60, 120);
+	ctx.fillText(isAllSucceeded ? '✔︎' : '✽', 105, 114);
+};
+
+const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 	process.env.AWS_ACCESS_KEY_ID = ev.payload.settings.AWS_ACCESS_KEY_ID;
 	process.env.AWS_SECRET_ACCESS_KEY = ev.payload.settings.AWS_SECRET_ACCESS_KEY;
 
@@ -108,88 +205,40 @@ const getPipelineState = async (ev: WillAppearEvent<CodePipelineMonitorSettings>
 		region: ev.payload.settings.region,
 		credentials: fromEnv()
 	});
+
 	try {
 		const command = new GetPipelineStateCommand({ name: ev.payload.settings.pipelineName });
 		const response = await codePipelineClient.send(command);
 		console.info('AWS CodePipeline Response', response);
-		const AllStatus = response.stageStates?.map(stage => stage.latestExecution?.status ?? '')
-		const canvas = createCanvas(144, 144);
-		const ctx = canvas.getContext('2d');
 
-		ctx.textBaseline = 'top';
-		// ctx.fillRect(0, 0, 144, 144);
+		const allStatuses = response.stageStates?.map(stage => stage.latestExecution?.status ?? '') ?? [];
+		const isAllSucceeded = allStatuses.every(status => status === 'Succeeded');
+		const actionId = ev.action.id;
 
-		ctx.font = '20px sans-serif bold';
-		ctx.textAlign = 'center';
-		ctx.fillStyle = 'white';
-		ctx.fillText(ev.payload.settings.displayName, 72, 20, 124);
-
-		const statusSymbols = AllStatus?.map((status): { symbol: string; color: string } => {
-			if (status === 'Succeeded') return { symbol: '✔', color: 'green' };
-			if (status === 'Failed') return { symbol: '✘', color: 'red' };
-			return { symbol: '.', color: 'blue' };
-		}) ?? [];
-
-		ctx.font = '60px sans-serif';
-		ctx.textAlign = 'center';
-
-		const combinedWidth = statusSymbols.length * 30;
-		let startX = 66 - combinedWidth / 2 + 15;
-
-		statusSymbols.forEach(({ symbol, color }) => {
-			ctx.fillStyle = color;
-			ctx.fillText(symbol, startX, 40);
-			startX += 40;
-		});
-
-		ctx.fillStyle = 'white';
-		ctx.font = '22px sans-serif';
-		ctx.fillText(dayjs().format('HH:mm'), 60, 120);
+		// 繪製按鈕
+		const { canvas, ctx } = createButtonCanvas();
+		drawTitle(ctx, ev.payload.settings.displayName);
+		drawStatusSymbols(ctx, allStatuses);
+		drawFooter(ctx, isAllSucceeded);
+		ev.action.setImage(canvas.toDataURL());
 
 		// MEMO: 如果所有狀態都成功，則停止刷新
 		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
-		const actionId = ev.action.id;
-		if (AllStatus?.every(status => status === 'Succeeded')) {
-			const refreshTimer = refreshTimers.get(actionId);
-			if (refreshTimer) {
-				clearInterval(refreshTimer);
-				refreshTimers.delete(actionId);
-			}
-			ctx.fillText('✔︎', 105, 114)
+		if (isAllSucceeded) {
+			clearRefreshTimer(actionId);
 			console.debug('All Succeeded, stop refresh');
 		} else {
 			// 清理舊的計時器
-			const oldRefreshTimer = refreshTimers.get(actionId);
-			if (oldRefreshTimer) {
-				clearInterval(oldRefreshTimer);
-			}
+			clearRefreshTimer(actionId);
 			// 設定新的計時器
 			const newRefreshTimer = setInterval(() => {
 				getPipelineState(ev);
-			}, 60000);
+			}, REFRESH_INTERVAL);
 			refreshTimers.set(actionId, newRefreshTimer);
-			ctx.fillText('✽', 105, 114)
 		}
-		ev.action.setImage(canvas.toDataURL());
 	} catch (error) {
 		console.error(error);
-		const actionId = ev.action.id;
-		const refreshTimer = refreshTimers.get(actionId);
-		if (refreshTimer) {
-			clearInterval(refreshTimer);
-			refreshTimers.delete(actionId);
-		}
+		clearRefreshTimer(ev.action.id);
 		ev.action.showAlert();
 	}
-}
-
-/**
- * Settings for {@link CodePipelineMonitor}.
- */
-type CodePipelineMonitorSettings = {
-	AWS_ACCESS_KEY_ID: string;
-	AWS_SECRET_ACCESS_KEY: string;
-	region: string;
-	pipelineName: string;
-	displayName: string;
 };
