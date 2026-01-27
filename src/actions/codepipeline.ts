@@ -4,7 +4,6 @@ import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-cod
 import dayjs from 'dayjs';
 import { createCanvas, Canvas, CanvasRenderingContext2D } from 'canvas';
 
-
 /**
  * Settings for {@link CodePipelineMonitor}.
  */
@@ -89,14 +88,14 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		ev.action.setSettings(ev.payload.settings);
 	}
 	override onSendToPlugin(_ev: SendToPluginEvent<JsonValue, JsonObject>): void | Promise<void> {
-		console.debug('onSendToPlugin');
+		streamDeck.logger.debug('onSendToPlugin');
 	}
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.debug('onWillAppear');
+		streamDeck.logger.debug('onWillAppear');
 		buildButton(ev);
 	}
 	override async onWillDisappear(ev: WillDisappearEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.debug('onWillDisappear');
+		streamDeck.logger.debug('onWillDisappear');
 		// 清理該按鈕實例的計時器
 		clearRefreshTimer(ev.action.id);
 	}
@@ -107,12 +106,12 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	 * settings using `setSettings` and `getSettings`.
 	 */
 	override async onKeyDown(ev: KeyDownEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.debug('onKeyDown');
+		streamDeck.logger.debug('onKeyDown');
 		const actionId = ev.action.id;
 		// 只有在設定完整時才設置長按計時器
 		if (isConfigured(ev.payload.settings)) {
 			const pressTimer = setTimeout(() => {
-				console.debug('長按超過1.3秒');
+				streamDeck.logger.debug('長按超過1.3秒');
 				streamDeck.system.openUrl(getAwsConsoleUrl(ev.payload.settings));
 				// 清理計時器
 				pressTimers.delete(actionId);
@@ -124,7 +123,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		}
 	}
 	override async onKeyUp(ev: KeyUpEvent<CodePipelineMonitorSettings>): Promise<void> {
-		console.debug('onKeyUp');
+		streamDeck.logger.debug('onKeyUp');
 		const actionId = ev.action.id;
 		const pressTimer = pressTimers.get(actionId);
 		if (pressTimer) {
@@ -209,7 +208,7 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 	try {
 		const command = new GetPipelineStateCommand({ name: ev.payload.settings.pipelineName });
 		const response = await codePipelineClient.send(command);
-		console.info('AWS CodePipeline Response', response);
+		streamDeck.logger.info('AWS CodePipeline Response', response);
 
 		const allStatuses = response.stageStates?.map(stage => stage.latestExecution?.status ?? '') ?? [];
 		const isAllSucceeded = allStatuses.every(status => status === 'Succeeded');
@@ -226,7 +225,7 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
 		if (isAllSucceeded) {
 			clearRefreshTimer(actionId);
-			console.debug('All Succeeded, stop refresh');
+			streamDeck.logger.debug('All Succeeded, stop refresh');
 		} else {
 			// 清理舊的計時器
 			clearRefreshTimer(actionId);
@@ -237,7 +236,7 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 			refreshTimers.set(actionId, newRefreshTimer);
 		}
 	} catch (error) {
-		console.error(error);
+		streamDeck.logger.error(error);
 		clearRefreshTimer(ev.action.id);
 		ev.action.showAlert();
 	}
