@@ -79,16 +79,6 @@ A Stream Deck plugin that provides real-time monitoring of AWS services, startin
    ```
    This opens Stream Deck with debug mode enabled, allowing you to view plugin logs in the developer console.
 
-### Installing Development Plugin
-
-To test the plugin during development, create a symbolic link from your project to the Stream Deck plugins directory:
-
-```bash
-ln -s /path/to/aws-monitor/com.phantas-weng.aws-monitor.sdPlugin ~/Library/Application\ Support/com.elgato.StreamDeck/Plugins/com.phantas-weng.aws-monitor.sdPlugin
-```
-
-After creating the symlink, restart the Stream Deck software to load the plugin.
-
 ### Project Structure
 
 ```
