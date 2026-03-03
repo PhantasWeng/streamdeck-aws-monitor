@@ -2,7 +2,7 @@ import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppe
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
 import dayjs from 'dayjs';
-import { createCanvas, Canvas, CanvasRenderingContext2D, loadImage } from 'canvas';
+import { createCanvas, Canvas, CanvasRenderingContext2D, loadImage, Image } from 'canvas';
 
 /**
  * Settings for {@link CodePipelineMonitor}.
@@ -41,9 +41,9 @@ const ICON_CHECK: IconPathDef[] = [
 	{ d: 'M5 11l6 6l10-10' },
 ];
 
-const ICON_REFRESH: IconPathDef[] = [
-	{ d: 'M12 6c3.31 0 6 2.69 6 6c0 3.31-2.69 6-6 6c-3.31 0-6-2.69-6-6v-2.5' },
-	{ d: 'M6 9l-3 3M6 9l3 3' },
+const ICON_ARROW_DOWN: IconPathDef[] = [
+	{ d: 'M12 5v12' },
+	{ d: 'M7 13l5 5l5-5' },
 ];
 
 // 常數
@@ -51,6 +51,14 @@ const CANVAS_SIZE = 144;
 const LONG_PRESS_DURATION = 1300;
 const REFRESH_INTERVAL = 60000;
 const DOUBLE_CLICK_THRESHOLD = 500; // 雙擊閾值 (ms)
+const DEBUG_STAGE_COUNT = 3;
+const DEBUG_STEP_INTERVAL = 3000; // Debug 模式每 3 秒推進一個 stage
+const DEBUG_PIPELINE_NAME = 'debug';
+const TITLE_Y = 12;
+const STATUS_ICON_Y = 50;
+const LOADING_ANIMATION_FPS = 10;
+const LOADING_ANIMATION_INTERVAL = Math.round(1000 / LOADING_ANIMATION_FPS);
+const LOADING_ROTATION_STEP = 24;
 
 // 必填欄位
 const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
@@ -60,17 +68,30 @@ const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
 	'pipelineName',
 	'displayName'
 ];
+const DEBUG_REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
+	'pipelineName',
+	'displayName'
+];
 
 // 使用 Map 來追蹤每個按鈕實例的計時器，避免全域變數被共用
 const pressTimers = new Map<string, NodeJS.Timeout>();
 const refreshTimers = new Map<string, NodeJS.Timeout>();
 const lastClickTimes = new Map<string, number>(); // 追蹤上次點擊時間，用於雙擊檢測
+const loadingAnimationTimers = new Map<string, NodeJS.Timeout>();
+const loadingAngles = new Map<string, number>();
+const loadingRenderers = new Map<string, () => Promise<void>>();
+const iconImageCache = new Map<string, Promise<Image>>();
 
 /**
  * 檢查必填設定是否完整（不包含 logGroupName）
  */
+const isDebugMode = (settings: CodePipelineMonitorSettings): boolean => {
+	return settings.pipelineName?.trim().toLowerCase() === DEBUG_PIPELINE_NAME;
+};
+
 const hasRequiredSettings = (settings: CodePipelineMonitorSettings): boolean => {
-	return REQUIRED_FIELDS.every(field => settings[field] && settings[field] !== '');
+	const requiredFields = isDebugMode(settings) ? DEBUG_REQUIRED_FIELDS : REQUIRED_FIELDS;
+	return requiredFields.every(field => settings[field] && settings[field] !== '');
 };
 
 /**
@@ -90,7 +111,7 @@ const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
 	ctx.fillStyle = 'white';
 	ctx.font = '20px sans-serif bold';
 	ctx.textAlign = 'center';
-	ctx.fillText(title, 72, 12, 134);
+	ctx.fillText(title, 72, TITLE_Y, 134);
 };
 
 /**
@@ -102,6 +123,53 @@ const clearRefreshTimer = (actionId: string): void => {
 		clearInterval(refreshTimer);
 		refreshTimers.delete(actionId);
 	}
+};
+
+/**
+ * 清理 loading 動畫計時器
+ */
+const clearLoadingAnimation = (actionId: string): void => {
+	const loadingTimer = loadingAnimationTimers.get(actionId);
+	if (loadingTimer) {
+		clearInterval(loadingTimer);
+		loadingAnimationTimers.delete(actionId);
+	}
+	loadingAngles.delete(actionId);
+	loadingRenderers.delete(actionId);
+};
+
+/**
+ * 判斷是否為 loading 狀態
+ */
+const isLoadingStatus = (status: string): boolean => {
+	return status !== 'Succeeded' && status !== 'Failed';
+};
+
+/**
+ * 同步 loading 動畫狀態
+ */
+const syncLoadingAnimation = (actionId: string, shouldAnimate: boolean, renderer: () => Promise<void>): void => {
+	loadingRenderers.set(actionId, renderer);
+
+	if (!shouldAnimate) {
+		clearLoadingAnimation(actionId);
+		return;
+	}
+
+	if (loadingAnimationTimers.has(actionId)) {
+		return;
+	}
+
+	loadingAngles.set(actionId, 0);
+	const loadingTimer = setInterval(() => {
+		const nextRotation = ((loadingAngles.get(actionId) ?? 0) + LOADING_ROTATION_STEP) % 360;
+		loadingAngles.set(actionId, nextRotation);
+		const currentRenderer = loadingRenderers.get(actionId);
+		if (currentRenderer) {
+			void currentRenderer();
+		}
+	}, LOADING_ANIMATION_INTERVAL);
+	loadingAnimationTimers.set(actionId, loadingTimer);
 };
 
 /**
@@ -143,6 +211,13 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		streamDeck.logger.debug('onWillDisappear');
 		// 清理該按鈕實例的計時器
 		clearRefreshTimer(ev.action.id);
+		clearLoadingAnimation(ev.action.id);
+		const pressTimer = pressTimers.get(ev.action.id);
+		if (pressTimer) {
+			clearTimeout(pressTimer);
+			pressTimers.delete(ev.action.id);
+		}
+		lastClickTimes.delete(ev.action.id);
 	}
 	/**
 	 * Listens for the {@link SingletonAction.onKeyDown} event which is emitted by Stream Deck when an action is pressed. Stream Deck provides various events for tracking interaction
@@ -153,11 +228,17 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	override async onKeyDown(ev: KeyDownEvent<CodePipelineMonitorSettings>): Promise<void> {
 		streamDeck.logger.debug('onKeyDown');
 		const actionId = ev.action.id;
+		const settings = ev.payload.settings;
 		// 只有在設定完整時才設置長按計時器
-		if (hasRequiredSettings(ev.payload.settings)) {
+		if (hasRequiredSettings(settings)) {
+			if (isDebugMode(settings)) {
+				runDebugDemo(ev);
+				return;
+			}
+
 			const pressTimer = setTimeout(() => {
 				streamDeck.logger.debug('長按超過1.3秒');
-				streamDeck.system.openUrl(getAwsConsoleUrl(ev.payload.settings));
+				streamDeck.system.openUrl(getAwsConsoleUrl(settings));
 				// 清理計時器
 				pressTimers.delete(actionId);
 			}, LONG_PRESS_DURATION);
@@ -169,6 +250,10 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	}
 	override async onKeyUp(ev: KeyUpEvent<CodePipelineMonitorSettings>): Promise<void> {
 		streamDeck.logger.debug('onKeyUp');
+		if (isDebugMode(ev.payload.settings)) {
+			return;
+		}
+
 		const actionId = ev.action.id;
 		const pressTimer = pressTimers.get(actionId);
 		if (pressTimer) {
@@ -203,7 +288,11 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 
 const buildButton = (ev: ButtonEvent): void => {
 	if (hasRequiredSettings(ev.payload.settings)) {
-		getPipelineState(ev);
+		if (isDebugMode(ev.payload.settings)) {
+			runDebugDemo(ev);
+		} else {
+			getPipelineState(ev);
+		}
 	} else {
 		renderInitButton(ev);
 	}
@@ -241,12 +330,64 @@ const createIconSvg = (paths: IconPathDef[], color: string): Buffer => {
 };
 
 /**
+ * 取得快取圖示
+ */
+const getIconImage = async (paths: IconPathDef[], color: string): Promise<Image> => {
+	const key = `${color}|${paths.map(({ d, opacity }) => `${d}:${opacity ?? ''}`).join('|')}`;
+	const cached = iconImageCache.get(key);
+	if (cached) {
+		return cached;
+	}
+
+	const imagePromise = loadImage(createIconSvg(paths, color));
+	iconImageCache.set(key, imagePromise);
+	return imagePromise;
+};
+
+/**
  * 繪製 Iconify line-md 圖示到 Canvas
  */
-const drawIcon = async (ctx: CanvasRenderingContext2D, paths: IconPathDef[], color: string, x: number, y: number, size: number): Promise<void> => {
-	const svg = createIconSvg(paths, color);
-	const img = await loadImage(svg);
-	ctx.drawImage(img, x, y, size, size);
+const drawIcon = async (ctx: CanvasRenderingContext2D, paths: IconPathDef[], color: string, x: number, y: number, size: number, rotationDeg = 0): Promise<void> => {
+	const img = await getIconImage(paths, color);
+	if (rotationDeg === 0) {
+		ctx.drawImage(img, x, y, size, size);
+		return;
+	}
+
+	const centerX = x + size / 2;
+	const centerY = y + size / 2;
+	ctx.save();
+	ctx.translate(centerX, centerY);
+	ctx.rotate((rotationDeg * Math.PI) / 180);
+	ctx.drawImage(img, -size / 2, -size / 2, size, size);
+	ctx.restore();
+};
+
+/**
+ * 繪製呼吸效果圖示（向下位移 + 輕微透明度變化）
+ */
+const drawBreathingIcon = async (
+	ctx: CanvasRenderingContext2D,
+	paths: IconPathDef[],
+	color: string,
+	x: number,
+	y: number,
+	size: number,
+	phaseDeg: number
+): Promise<void> => {
+	const img = await getIconImage(paths, color);
+	const wave = Math.sin((phaseDeg * Math.PI) / 180);
+	const downwardWave = (wave + 1) / 2;
+	const yOffset = 4 * downwardWave;
+	const alpha = 0.78 + 0.22 * (1 - downwardWave);
+	const centerX = x + size / 2;
+	const centerY = y + size / 2;
+
+	ctx.save();
+	ctx.translate(centerX, centerY + yOffset);
+	ctx.globalAlpha = alpha;
+	ctx.drawImage(img, -size / 2, -size / 2, size, size);
+	ctx.restore();
 };
 
 /**
@@ -261,16 +402,17 @@ const getStatusIcon = (status: string): { icon: IconPathDef[]; color: string } =
 /**
  * 繪製狀態圖示
  */
-const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string[]): Promise<void> => {
-	const statusIcons = statuses.map(getStatusIcon);
+const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, actionId: string, statuses: string[]): Promise<void> => {
 	const iconSize = 40;
 	const gap = 4;
-	const totalWidth = statusIcons.length * iconSize + (statusIcons.length - 1) * gap;
+	const totalWidth = statuses.length * iconSize + (statuses.length - 1) * gap;
 	let x = (CANVAS_SIZE - totalWidth) / 2;
-	const y = 46;
+	const y = STATUS_ICON_Y;
 
-	for (const { icon, color } of statusIcons) {
-		await drawIcon(ctx, icon, color, x, y, iconSize);
+	for (const status of statuses) {
+		const { icon, color } = getStatusIcon(status);
+		const rotationDeg = isLoadingStatus(status) ? (loadingAngles.get(actionId) ?? 0) : 0;
+		await drawIcon(ctx, icon, color, x, y, iconSize, rotationDeg);
 		x += iconSize + gap;
 	}
 };
@@ -278,7 +420,7 @@ const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string
 /**
  * 繪製底部時間和狀態指示器
  */
-const drawFooter = async (ctx: CanvasRenderingContext2D, isAllSucceeded: boolean): Promise<void> => {
+const drawFooter = async (ctx: CanvasRenderingContext2D, actionId: string, isAllSucceeded: boolean, isRefreshing: boolean): Promise<void> => {
 	ctx.fillStyle = 'white';
 	ctx.font = '22px sans-serif';
 	ctx.textAlign = 'center';
@@ -286,8 +428,60 @@ const drawFooter = async (ctx: CanvasRenderingContext2D, isAllSucceeded: boolean
 	if (isAllSucceeded) {
 		await drawIcon(ctx, ICON_CHECK, '#4ade80', 96, 108, 22);
 	} else {
-		await drawIcon(ctx, ICON_REFRESH, 'white', 96, 108, 22);
+		const phaseDeg = loadingAngles.get(actionId) ?? 0;
+		if (isRefreshing) {
+			await drawBreathingIcon(ctx, ICON_ARROW_DOWN, 'white', 96, 108, 22, phaseDeg);
+		} else {
+			await drawIcon(ctx, ICON_ARROW_DOWN, 'white', 96, 108, 22);
+		}
 	}
+};
+
+const renderDebugFrame = async (ev: ButtonEvent, statuses: string[]): Promise<void> => {
+	const { canvas, ctx } = createButtonCanvas();
+	drawTitle(ctx, ev.payload.settings.displayName);
+	await drawStatusSymbols(ctx, ev.action.id, statuses);
+	await drawFooter(
+		ctx,
+		ev.action.id,
+		statuses.every((status) => status === 'Succeeded'),
+		refreshTimers.has(ev.action.id)
+	);
+	ev.action.setImage(canvas.toDataURL());
+};
+
+const runDebugDemo = (ev: ButtonEvent): void => {
+	const actionId = ev.action.id;
+	clearRefreshTimer(actionId);
+
+	const statuses = Array.from({ length: DEBUG_STAGE_COUNT }, () => 'InProgress');
+	let stageIndex = 0;
+	const debugTimer = setInterval(() => {
+		const stageResult = Math.random() >= 0.5 ? 'Succeeded' : 'Failed';
+		statuses[stageIndex] = stageResult;
+		stageIndex += 1;
+
+		if (stageResult === 'Failed') {
+			for (let i = stageIndex; i < DEBUG_STAGE_COUNT; i += 1) {
+				statuses[i] = 'Failed';
+			}
+		}
+
+		if (stageResult === 'Failed' || stageIndex >= DEBUG_STAGE_COUNT) {
+			clearRefreshTimer(actionId);
+		}
+
+		const renderDebug = () => renderDebugFrame(ev, statuses);
+		void renderDebug();
+		const hasLoading = statuses.some(isLoadingStatus);
+		const shouldAnimate = hasLoading || refreshTimers.has(actionId);
+		syncLoadingAnimation(actionId, shouldAnimate, renderDebug);
+	}, DEBUG_STEP_INTERVAL);
+
+	refreshTimers.set(actionId, debugTimer);
+	const renderDebug = () => renderDebugFrame(ev, statuses);
+	void renderDebug();
+	syncLoadingAnimation(actionId, true, renderDebug);
 };
 
 const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
@@ -307,13 +501,13 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		const allStatuses = response.stageStates?.map(stage => stage.latestExecution?.status ?? '') ?? [];
 		const isAllSucceeded = allStatuses.every(status => status === 'Succeeded');
 		const actionId = ev.action.id;
-
-		// 繪製按鈕
-		const { canvas, ctx } = createButtonCanvas();
-		drawTitle(ctx, ev.payload.settings.displayName);
-		await drawStatusSymbols(ctx, allStatuses);
-		await drawFooter(ctx, isAllSucceeded);
-		ev.action.setImage(canvas.toDataURL());
+		const renderCurrent = async () => {
+			const { canvas, ctx } = createButtonCanvas();
+			drawTitle(ctx, ev.payload.settings.displayName);
+			await drawStatusSymbols(ctx, actionId, allStatuses);
+			await drawFooter(ctx, actionId, allStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
+			ev.action.setImage(canvas.toDataURL());
+		};
 
 		// MEMO: 如果所有狀態都成功，則停止刷新
 		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
@@ -329,9 +523,16 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 			}, REFRESH_INTERVAL);
 			refreshTimers.set(actionId, newRefreshTimer);
 		}
+
+		// 繪製按鈕
+		await renderCurrent();
+		const hasLoading = allStatuses.some(isLoadingStatus);
+		const shouldAnimate = hasLoading || refreshTimers.has(actionId);
+		syncLoadingAnimation(actionId, shouldAnimate, renderCurrent);
 	} catch (error) {
 		streamDeck.logger.error(error);
 		clearRefreshTimer(ev.action.id);
+		clearLoadingAnimation(ev.action.id);
 		ev.action.showAlert();
 	}
 };

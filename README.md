@@ -12,6 +12,7 @@ A Stream Deck plugin that provides real-time monitoring of AWS services, startin
 - **Visual Status Indicators**: Clear visual representation of pipeline stages with color-coded status symbols
 - **Quick Access**: Long-press (1.3 seconds) to open the pipeline in AWS Console
 - **CloudWatch Integration**: Double-click to open CloudWatch Log Group (optional)
+- **Debug Demo Mode**: Set `Pipeline Name` to `debug` to run a local 3-stage simulation without AWS credentials
 - **Multi-region Support**: Support for all AWS regions
 - **Custom Display Names**: Set custom names for your pipeline buttons
 
@@ -111,6 +112,21 @@ You'll need to provide your AWS credentials in the plugin settings:
 5. **Pipeline Name**: The name of your CodePipeline
 6. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
 
+### Debug Demo Mode
+
+For quick UI testing without AWS access, set:
+
+1. **Pipeline Name**: `debug`
+2. **Display Name**: Any label you want
+
+In debug mode:
+
+- Only `Pipeline Name` and `Display Name` are required
+- The plugin simulates 3 stages, one step every 3 seconds
+- Each stage randomly succeeds or fails
+- If one stage fails, remaining stages are marked as failed
+- Press the key again to rerun the demo
+
 ### IAM Permissions
 
 Your AWS credentials need the following permissions:
@@ -145,6 +161,12 @@ Your AWS credentials need the following permissions:
    - **Short press**: Refresh pipeline status
    - **Double-click**: Open CloudWatch Log Group (requires Log Group Name configured)
    - **Long press (1.3s)**: Open pipeline in AWS Console
+
+### Debug Mode Key Behavior (`Pipeline Name = debug`)
+
+- **Short press**: Restart debug simulation
+- **Double-click**: No action
+- **Long press**: No action
 
 ## Building
 
