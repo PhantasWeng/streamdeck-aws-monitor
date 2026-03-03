@@ -2,7 +2,7 @@ import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppe
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
 import dayjs from 'dayjs';
-import { createCanvas, Canvas, CanvasRenderingContext2D } from 'canvas';
+import { createCanvas, Canvas, CanvasRenderingContext2D, loadImage } from 'canvas';
 
 /**
  * Settings for {@link CodePipelineMonitor}.
@@ -17,6 +17,34 @@ type CodePipelineMonitorSettings = {
 };
 
 type ButtonEvent = WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>;
+
+// Iconify line-md icon path definitions（靜態版，移除動畫）
+type IconPathDef = { d: string; opacity?: number };
+
+const ICON_CONFIRM_CIRCLE: IconPathDef[] = [
+	{ d: 'M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z' },
+	{ d: 'M8 12l3 3l5-5' },
+];
+
+const ICON_CLOSE_CIRCLE: IconPathDef[] = [
+	{ d: 'M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z' },
+	{ d: 'M12 12l4 4M12 12l-4-4M12 12l-4 4M12 12l4-4' },
+];
+
+const ICON_LOADING: IconPathDef[] = [
+	{ d: 'M12 3c4.97 0 9 4.03 9 9' },
+	{ d: 'M12 3c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9c0-4.97 4.03-9 9-9Z', opacity: 0.3 },
+];
+
+// Footer 用圖示（無圓圈）
+const ICON_CHECK: IconPathDef[] = [
+	{ d: 'M5 11l6 6l10-10' },
+];
+
+const ICON_REFRESH: IconPathDef[] = [
+	{ d: 'M12 6c3.31 0 6 2.69 6 6c0 3.31-2.69 6-6 6c-3.31 0-6-2.69-6-6v-2.5' },
+	{ d: 'M6 9l-3 3M6 9l3 3' },
+];
 
 // 常數
 const CANVAS_SIZE = 144;
@@ -62,7 +90,7 @@ const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
 	ctx.fillStyle = 'white';
 	ctx.font = '20px sans-serif bold';
 	ctx.textAlign = 'center';
-	ctx.fillText(title, 72, 20, 124);
+	ctx.fillText(title, 72, 12, 134);
 };
 
 /**
@@ -199,41 +227,67 @@ const renderInitButton = (ev: ButtonEvent): void => {
 };
 
 /**
- * 將 pipeline 狀態轉換為顯示符號
+ * 產生 Iconify line-md 圖示的 SVG Buffer
  */
-const getStatusSymbol = (status: string): { symbol: string; color: string } => {
-	if (status === 'Succeeded') return { symbol: '✔', color: 'green' };
-	if (status === 'Failed') return { symbol: '✘', color: 'red' };
-	return { symbol: '.', color: 'blue' };
+const createIconSvg = (paths: IconPathDef[], color: string): Buffer => {
+	const pathElements = paths.map(({ d, opacity }) =>
+		`<path d="${d}"${opacity !== undefined ? ` opacity="${opacity}"` : ''}/>`
+	).join('');
+	return Buffer.from(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">` +
+		`<g fill="none" stroke="${color}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">` +
+		`${pathElements}</g></svg>`
+	);
 };
 
 /**
- * 繪製狀態符號
+ * 繪製 Iconify line-md 圖示到 Canvas
  */
-const drawStatusSymbols = (ctx: CanvasRenderingContext2D, statuses: string[]): void => {
-	const statusSymbols = statuses.map(getStatusSymbol);
+const drawIcon = async (ctx: CanvasRenderingContext2D, paths: IconPathDef[], color: string, x: number, y: number, size: number): Promise<void> => {
+	const svg = createIconSvg(paths, color);
+	const img = await loadImage(svg);
+	ctx.drawImage(img, x, y, size, size);
+};
 
-	ctx.font = '60px sans-serif';
-	ctx.textAlign = 'center';
+/**
+ * 取得 pipeline 狀態對應的圖示
+ */
+const getStatusIcon = (status: string): { icon: IconPathDef[]; color: string } => {
+	if (status === 'Succeeded') return { icon: ICON_CONFIRM_CIRCLE, color: '#4ade80' };
+	if (status === 'Failed') return { icon: ICON_CLOSE_CIRCLE, color: '#f87171' };
+	return { icon: ICON_LOADING, color: '#60a5fa' };
+};
 
-	const combinedWidth = statusSymbols.length * 30;
-	let startX = 66 - combinedWidth / 2 + 15;
+/**
+ * 繪製狀態圖示
+ */
+const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string[]): Promise<void> => {
+	const statusIcons = statuses.map(getStatusIcon);
+	const iconSize = 40;
+	const gap = 4;
+	const totalWidth = statusIcons.length * iconSize + (statusIcons.length - 1) * gap;
+	let x = (CANVAS_SIZE - totalWidth) / 2;
+	const y = 46;
 
-	statusSymbols.forEach(({ symbol, color }) => {
-		ctx.fillStyle = color;
-		ctx.fillText(symbol, startX, 40);
-		startX += 40;
-	});
+	for (const { icon, color } of statusIcons) {
+		await drawIcon(ctx, icon, color, x, y, iconSize);
+		x += iconSize + gap;
+	}
 };
 
 /**
  * 繪製底部時間和狀態指示器
  */
-const drawFooter = (ctx: CanvasRenderingContext2D, isAllSucceeded: boolean): void => {
+const drawFooter = async (ctx: CanvasRenderingContext2D, isAllSucceeded: boolean): Promise<void> => {
 	ctx.fillStyle = 'white';
 	ctx.font = '22px sans-serif';
-	ctx.fillText(dayjs().format('HH:mm'), 60, 120);
-	ctx.fillText(isAllSucceeded ? '✔︎' : '✽', 105, 114);
+	ctx.textAlign = 'center';
+	ctx.fillText(dayjs().format('HH:mm'), 52, 110);
+	if (isAllSucceeded) {
+		await drawIcon(ctx, ICON_CHECK, '#4ade80', 96, 108, 22);
+	} else {
+		await drawIcon(ctx, ICON_REFRESH, 'white', 96, 108, 22);
+	}
 };
 
 const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
@@ -257,8 +311,8 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		// 繪製按鈕
 		const { canvas, ctx } = createButtonCanvas();
 		drawTitle(ctx, ev.payload.settings.displayName);
-		drawStatusSymbols(ctx, allStatuses);
-		drawFooter(ctx, isAllSucceeded);
+		await drawStatusSymbols(ctx, allStatuses);
+		await drawFooter(ctx, isAllSucceeded);
 		ev.action.setImage(canvas.toDataURL());
 
 		// MEMO: 如果所有狀態都成功，則停止刷新

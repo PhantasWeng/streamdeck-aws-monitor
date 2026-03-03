@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.iconify.design)",
+      "Bash(node:*)"
+    ]
+  }
+}

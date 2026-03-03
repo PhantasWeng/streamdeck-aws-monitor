@@ -17,6 +17,11 @@ yarn watch          # Development mode with auto-rebuild and plugin restart
    ln -s /path/to/aws-monitor/com.phantas-weng.aws-monitor.sdPlugin ~/Library/Application\ Support/com.elgato.StreamDeck/Plugins/com.phantas-weng.aws-monitor.sdPlugin
    ```
 3. Run `yarn watch` for development with hot reload
+4. Launch Stream Deck in debug mode to view plugin logs:
+   ```bash
+   open -a "Elgato Stream Deck" --args -debug
+   ```
+5. Install plugin: `streamdeck install com.phantas-weng.aws-monitor.sdPlugin`
 
 ## Architecture
 
@@ -42,5 +47,6 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 - `canvas` package is marked as external in Rollup (provided by Stream Deck runtime)
 - Timer cleanup in `onWillDisappear` prevents memory leaks
-- Long-press (1.3s) opens AWS Console; short press refreshes status
+- Button interactions: short press refreshes status, double-click opens CloudWatch logs (if `logGroupName` configured), long-press (1.3s) opens AWS Console
 - Status symbols: ✔ (green=success), ✘ (red=failed), . (blue=in progress)
+- Code comments are in Traditional Chinese (zh-TW)
