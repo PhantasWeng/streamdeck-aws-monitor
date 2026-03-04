@@ -73,6 +73,7 @@ const STATUS_ICON_Y = 50;
 const LOADING_ANIMATION_FPS = 10;
 const LOADING_ANIMATION_INTERVAL = Math.round(1000 / LOADING_ANIMATION_FPS);
 const LOADING_ROTATION_STEP = 24;
+const STATUS_CHANGE_LOADING_DURATION = 300;
 const DEFAULT_POLLING_MAX_MINUTES = 30;
 
 // 必填欄位
@@ -94,6 +95,9 @@ const loadingAngles = new Map<string, number>();
 const loadingRenderers = new Map<string, () => Promise<void>>();
 const iconImageCache = new Map<string, Promise<Image>>();
 const pollingStartedAtMap = new Map<string, number>();
+const previousStageStatusesMap = new Map<string, string[]>();
+const stageStatusTransitionUntilMap = new Map<string, Map<number, number>>();
+const stageStatusTransitionTimers = new Map<string, NodeJS.Timeout>();
 const actionKeyIconPath = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
 	'../imgs/actions/codepipeline/key@2x.png'
@@ -187,11 +191,109 @@ const clearPollingState = (actionId: string): void => {
 	pollingStartedAtMap.delete(actionId);
 };
 
+const clearStageStatusTransitionTimer = (actionId: string): void => {
+	const transitionTimer = stageStatusTransitionTimers.get(actionId);
+	if (transitionTimer) {
+		clearTimeout(transitionTimer);
+		stageStatusTransitionTimers.delete(actionId);
+	}
+};
+
+const clearStageStatusTracking = (actionId: string): void => {
+	clearStageStatusTransitionTimer(actionId);
+	previousStageStatusesMap.delete(actionId);
+	stageStatusTransitionUntilMap.delete(actionId);
+};
+
 /**
  * 判斷是否為 loading 狀態
  */
 const isLoadingStatus = (status: string): boolean => {
 	return status !== 'Succeeded' && status !== 'Failed';
+};
+
+const registerStageStatusTransitions = (actionId: string, statuses: string[]): boolean => {
+	const previousStatuses = previousStageStatusesMap.get(actionId);
+	previousStageStatusesMap.set(actionId, [...statuses]);
+	if (!previousStatuses) {
+		return false;
+	}
+
+	const now = Date.now();
+	let hasTransition = false;
+	const existingTransitions = stageStatusTransitionUntilMap.get(actionId) ?? new Map<number, number>();
+	for (let idx = 0; idx < statuses.length; idx += 1) {
+		const currentStatus = statuses[idx];
+		const previousStatus = previousStatuses[idx];
+		if (previousStatus !== undefined && currentStatus !== previousStatus) {
+			existingTransitions.set(idx, now + STATUS_CHANGE_LOADING_DURATION);
+			hasTransition = true;
+		}
+	}
+
+	if (existingTransitions.size > 0) {
+		stageStatusTransitionUntilMap.set(actionId, existingTransitions);
+	}
+
+	return hasTransition;
+};
+
+const getDisplayStatuses = (actionId: string, statuses: string[]): string[] => {
+	const now = Date.now();
+	const transitions = stageStatusTransitionUntilMap.get(actionId);
+	if (!transitions || transitions.size === 0) {
+		return statuses;
+	}
+
+	const displayStatuses = statuses.map((status, idx) => {
+		const until = transitions.get(idx) ?? 0;
+		if (until > now) {
+			return 'TransitionLoading';
+		}
+		if (until > 0) {
+			transitions.delete(idx);
+		}
+		return status;
+	});
+
+	if (transitions.size === 0) {
+		stageStatusTransitionUntilMap.delete(actionId);
+	}
+
+	return displayStatuses;
+};
+
+const scheduleStageStatusTransitionFinalize = (
+	actionId: string,
+	renderer: () => Promise<void>,
+	resyncAnimation: () => void
+): void => {
+	clearStageStatusTransitionTimer(actionId);
+
+	const now = Date.now();
+	const transitions = stageStatusTransitionUntilMap.get(actionId);
+	if (!transitions || transitions.size === 0) {
+		return;
+	}
+
+	let nearestDue = Number.POSITIVE_INFINITY;
+	for (const until of transitions.values()) {
+		if (until > now && until < nearestDue) {
+			nearestDue = until;
+		}
+	}
+
+	if (!Number.isFinite(nearestDue)) {
+		return;
+	}
+
+	const timeoutMs = Math.max(0, nearestDue - now);
+	const transitionTimer = setTimeout(() => {
+		stageStatusTransitionTimers.delete(actionId);
+		void renderer();
+		resyncAnimation();
+	}, timeoutMs);
+	stageStatusTransitionTimers.set(actionId, transitionTimer);
 };
 
 /**
@@ -274,6 +376,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		clearRefreshTimer(ev.action.id);
 		clearLoadingAnimation(ev.action.id);
 		clearPollingState(ev.action.id);
+		clearStageStatusTracking(ev.action.id);
 		const pressTimer = pressTimers.get(ev.action.id);
 		if (pressTimer) {
 			clearTimeout(pressTimer);
@@ -359,6 +462,7 @@ const buildButton = (ev: ButtonEvent): void => {
 		clearRefreshTimer(ev.action.id);
 		clearLoadingAnimation(ev.action.id);
 		clearPollingState(ev.action.id);
+		clearStageStatusTracking(ev.action.id);
 		void renderInitButton(ev);
 	}
 };
@@ -537,16 +641,29 @@ const runDebugDemo = (ev: ButtonEvent): void => {
 	const pollingMaxMs = getPollingMaxMinutes(settings) * 60 * 1000;
 	clearRefreshTimer(actionId);
 	clearPollingState(actionId);
+	clearStageStatusTracking(actionId);
 
 	const statuses = Array.from({ length: DEBUG_STAGE_COUNT }, () => 'InProgress');
 	let isTerminated = false;
 	let debugTick = 0;
+	void registerStageStatusTransitions(actionId, statuses);
+	const renderDebug = () => {
+		const displayStatuses = getDisplayStatuses(actionId, statuses);
+		return renderDebugFrame(ev, displayStatuses, isTerminated);
+	};
+	const resyncAnimation = (): void => {
+		const displayStatuses = getDisplayStatuses(actionId, statuses);
+		const hasLoading = displayStatuses.some(isLoadingStatus);
+		const shouldAnimate = !isTerminated && (hasLoading || refreshTimers.has(actionId));
+		syncLoadingAnimation(actionId, shouldAnimate, renderDebug);
+	};
 	const startedAt = Date.now();
 	const debugTimer = setInterval(() => {
 		if (Date.now() - startedAt >= pollingMaxMs) {
 			isTerminated = true;
 			clearRefreshTimer(actionId);
-			const renderTerminated = () => renderDebugFrame(ev, statuses, true);
+			clearStageStatusTransitionTimer(actionId);
+			const renderTerminated = () => renderDebugFrame(ev, getDisplayStatuses(actionId, statuses), true);
 			void renderTerminated();
 			syncLoadingAnimation(actionId, false, renderTerminated);
 			return;
@@ -567,27 +684,25 @@ const runDebugDemo = (ev: ButtonEvent): void => {
 			statuses[2] = isAllSucceededSample ? 'Succeeded' : 'Failed';
 		}
 		debugTick += 1;
+		const hasStatusTransition = registerStageStatusTransitions(actionId, statuses);
 
 		const isAllSucceeded = statuses.every((status) => status === 'Succeeded');
-
-		const renderDebug = () => renderDebugFrame(ev, statuses, isTerminated);
 		void renderDebug();
+		resyncAnimation();
+		if (hasStatusTransition) {
+			scheduleStageStatusTransitionFinalize(actionId, renderDebug, resyncAnimation);
+		} else {
+			clearStageStatusTransitionTimer(actionId);
+		}
 
 		if (isAllSucceeded) {
 			clearRefreshTimer(actionId);
-			syncLoadingAnimation(actionId, false, renderDebug);
-			return;
 		}
-
-		const hasLoading = statuses.some(isLoadingStatus);
-		const shouldAnimate = hasLoading || refreshTimers.has(actionId);
-		syncLoadingAnimation(actionId, shouldAnimate, renderDebug);
 	}, DEBUG_STEP_INTERVAL);
 
 	refreshTimers.set(actionId, debugTimer);
-	const renderDebug = () => renderDebugFrame(ev, statuses, isTerminated);
 	void renderDebug();
-	syncLoadingAnimation(actionId, true, renderDebug);
+	resyncAnimation();
 };
 
 const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Promise<void> => {
@@ -598,6 +713,7 @@ const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Pr
 
 	if (resetPollingWindow) {
 		clearPollingState(actionId);
+		clearStageStatusTracking(actionId);
 	}
 
 	const codePipelineClient = new CodePipelineClient({
@@ -611,6 +727,7 @@ const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Pr
 		streamDeck.logger.info('AWS CodePipeline Response', response);
 
 		const allStatuses = response.stageStates?.map(stage => stage.latestExecution?.status ?? '') ?? [];
+		const hasStatusTransition = registerStageStatusTransitions(actionId, allStatuses);
 		const isAllSucceeded = allStatuses.every(status => status === 'Succeeded');
 		const pollingMaxMs = getPollingMaxMinutes(settings) * 60 * 1000;
 		let isTerminated = false;
@@ -630,13 +747,21 @@ const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Pr
 		const renderCurrent = async () => {
 			const { canvas, ctx } = createButtonCanvas();
 			drawTitle(ctx, getButtonTitle(settings));
-			await drawStatusSymbols(ctx, actionId, allStatuses);
+			const displayStatuses = getDisplayStatuses(actionId, allStatuses);
+			await drawStatusSymbols(ctx, actionId, displayStatuses);
 			if (isTerminated) {
 				await drawTerminatedFooter(ctx);
 			} else {
-				await drawFooter(ctx, actionId, allStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
+				await drawFooter(ctx, actionId, displayStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
 			}
 			ev.action.setImage(canvas.toDataURL());
+		};
+
+		const resyncAnimation = (): void => {
+			const displayStatuses = getDisplayStatuses(actionId, allStatuses);
+			const hasLoading = displayStatuses.some(isLoadingStatus);
+			const shouldAnimate = !isTerminated && (hasLoading || refreshTimers.has(actionId));
+			syncLoadingAnimation(actionId, shouldAnimate, renderCurrent);
 		};
 
 		// MEMO: 如果所有狀態都成功，則停止刷新
@@ -659,13 +784,17 @@ const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Pr
 
 		// 繪製按鈕
 		await renderCurrent();
-		const hasLoading = allStatuses.some(isLoadingStatus);
-		const shouldAnimate = !isTerminated && (hasLoading || refreshTimers.has(actionId));
-		syncLoadingAnimation(actionId, shouldAnimate, renderCurrent);
+		resyncAnimation();
+		if (hasStatusTransition) {
+			scheduleStageStatusTransitionFinalize(actionId, renderCurrent, resyncAnimation);
+		} else {
+			clearStageStatusTransitionTimer(actionId);
+		}
 	} catch (error) {
 		streamDeck.logger.error(error);
 		clearRefreshTimer(ev.action.id);
 		clearLoadingAnimation(ev.action.id);
+		clearStageStatusTracking(ev.action.id);
 		ev.action.showAlert();
 	}
 };
