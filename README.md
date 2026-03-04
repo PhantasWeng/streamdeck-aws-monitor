@@ -107,10 +107,11 @@ You'll need to provide your AWS credentials in the plugin settings:
 
 1. **Access Key ID**: Your AWS access key ID
 2. **Secret Access Key**: Your AWS secret access key
-3. **Region**: Select the AWS region where your pipeline is located
-4. **Display Name**: A custom name for the button
-5. **Pipeline Name**: The name of your CodePipeline
-6. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
+3. **Pipeline Region**: Select the AWS region where your pipeline is located
+4. **Log Group Region**: Select the AWS region where your CloudWatch log group is located
+5. **Display Name**: (Optional) A custom name for the button. If empty, pipeline name is used
+6. **Pipeline Name**: The name of your CodePipeline
+7. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
 
 ### Debug Demo Mode
 
@@ -121,7 +122,7 @@ For quick UI testing without AWS access, set:
 
 In debug mode:
 
-- Only `Pipeline Name` and `Display Name` are required
+- Only `Pipeline Name` is required (`Display Name` is optional)
 - The plugin simulates 3 stages, one step every 3 seconds
 - Each stage randomly succeeds or fails
 - If one stage fails, remaining stages are marked as failed

@@ -7,94 +7,179 @@
   <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
   <script>
     const { streamDeckClient } = SDPIComponents;
-    streamDeckClient.sendToPropertyInspector.subscribe(event => {
-      if (event.payload.pipelineList) {
-        const pipelineSelect = document.getElementById('pipelineSelect');
-        event.payload.pipelineList.forEach(pipeline => {
-          const option = document.createElement('option');
-          option.value = pipeline;
-          option.textContent = pipeline;
-          pipelineSelect.appendChild(option);
-          console.log(option);
-        });
-      }
-    })
-    streamDeckClient.send('sendToPlugin', {
-      test: ['test', 'test2']
-    });
 
-    const regions = [
-      { "name": "US East (Ohio)", "code": "us-east-2" },
-      { "name": "US East (N. Virginia)", "code": "us-east-1" },
-      { "name": "US West (N. California)", "code": "us-west-1" },
-      { "name": "US West (Oregon)", "code": "us-west-2" },
-      { "name": "Africa (Cape Town)", "code": "af-south-1" },
-      { "name": "Asia Pacific (Hong Kong)", "code": "ap-east-1" },
-      { "name": "Asia Pacific (Hyderabad)", "code": "ap-south-2" },
-      { "name": "Asia Pacific (Jakarta)", "code": "ap-southeast-3" },
-      { "name": "Asia Pacific (Malaysia)", "code": "ap-southeast-5" },
-      { "name": "Asia Pacific (Melbourne)", "code": "ap-southeast-4" },
-      { "name": "Asia Pacific (Mumbai)", "code": "ap-south-1" },
-      { "name": "Asia Pacific (Osaka)", "code": "ap-northeast-3" },
-      { "name": "Asia Pacific (Seoul)", "code": "ap-northeast-2" },
-      { "name": "Asia Pacific (Singapore)", "code": "ap-southeast-1" },
-      { "name": "Asia Pacific (Sydney)", "code": "ap-southeast-2" },
-      { "name": "Asia Pacific (Taipei)", "code": "ap-east-2" },
-      { "name": "Asia Pacific (Thailand)", "code": "ap-southeast-7" },
-      { "name": "Asia Pacific (Tokyo)", "code": "ap-northeast-1" },
-      { "name": "Canada (Central)", "code": "ca-central-1" },
-      { "name": "Canada West (Calgary)", "code": "ca-west-1" },
-      { "name": "Europe (Frankfurt)", "code": "eu-central-1" },
-      { "name": "Europe (Ireland)", "code": "eu-west-1" },
-      { "name": "Europe (London)", "code": "eu-west-2" },
-      { "name": "Europe (Milan)", "code": "eu-south-1" },
-      { "name": "Europe (Paris)", "code": "eu-west-3" },
-      { "name": "Europe (Spain)", "code": "eu-south-2" },
-      { "name": "Europe (Stockholm)", "code": "eu-north-1" },
-      { "name": "Europe (Zurich)", "code": "eu-central-2" },
-      { "name": "Israel (Tel Aviv)", "code": "il-central-1" },
-      { "name": "Mexico (Central)", "code": "mx-central-1" },
-      { "name": "Middle East (Bahrain)", "code": "me-south-1" },
-      { "name": "Middle East (UAE)", "code": "me-central-1" },
-      { "name": "South America (São Paulo)", "code": "sa-east-1" },
-      { "name": "AWS GovCloud (US-East)", "code": "us-gov-east-1" },
-      { "name": "AWS GovCloud (US-West)", "code": "us-gov-west-1" }
+    const regionGroups = [
+      {
+        label: "Americas",
+        regions: [
+          { "name": "US East (Ohio)", "code": "us-east-2" },
+          { "name": "US East (N. Virginia)", "code": "us-east-1" },
+          { "name": "US West (N. California)", "code": "us-west-1" },
+          { "name": "US West (Oregon)", "code": "us-west-2" },
+          { "name": "Canada (Central)", "code": "ca-central-1" },
+          { "name": "Canada West (Calgary)", "code": "ca-west-1" },
+          { "name": "Mexico (Central)", "code": "mx-central-1" },
+          { "name": "South America (São Paulo)", "code": "sa-east-1" }
+        ]
+      },
+      {
+        label: "Europe",
+        regions: [
+          { "name": "Europe (Frankfurt)", "code": "eu-central-1" },
+          { "name": "Europe (Zurich)", "code": "eu-central-2" },
+          { "name": "Europe (Ireland)", "code": "eu-west-1" },
+          { "name": "Europe (London)", "code": "eu-west-2" },
+          { "name": "Europe (Paris)", "code": "eu-west-3" },
+          { "name": "Europe (Milan)", "code": "eu-south-1" },
+          { "name": "Europe (Spain)", "code": "eu-south-2" },
+          { "name": "Europe (Stockholm)", "code": "eu-north-1" }
+        ]
+      },
+      {
+        label: "Asia Pacific",
+        regions: [
+          { "name": "Asia Pacific (Hong Kong)", "code": "ap-east-1" },
+          { "name": "Asia Pacific (Taipei)", "code": "ap-east-2" },
+          { "name": "Asia Pacific (Tokyo)", "code": "ap-northeast-1" },
+          { "name": "Asia Pacific (Seoul)", "code": "ap-northeast-2" },
+          { "name": "Asia Pacific (Osaka)", "code": "ap-northeast-3" },
+          { "name": "Asia Pacific (Mumbai)", "code": "ap-south-1" },
+          { "name": "Asia Pacific (Hyderabad)", "code": "ap-south-2" },
+          { "name": "Asia Pacific (Singapore)", "code": "ap-southeast-1" },
+          { "name": "Asia Pacific (Sydney)", "code": "ap-southeast-2" },
+          { "name": "Asia Pacific (Jakarta)", "code": "ap-southeast-3" },
+          { "name": "Asia Pacific (Melbourne)", "code": "ap-southeast-4" },
+          { "name": "Asia Pacific (Malaysia)", "code": "ap-southeast-5" },
+          { "name": "Asia Pacific (Thailand)", "code": "ap-southeast-7" }
+        ]
+      },
+      {
+        label: "Middle East & Africa",
+        regions: [
+          { "name": "Africa (Cape Town)", "code": "af-south-1" },
+          { "name": "Middle East (Bahrain)", "code": "me-south-1" },
+          { "name": "Middle East (UAE)", "code": "me-central-1" },
+          { "name": "Israel (Tel Aviv)", "code": "il-central-1" }
+        ]
+      },
+      {
+        label: "GovCloud",
+        regions: [
+          { "name": "AWS GovCloud (US-East)", "code": "us-gov-east-1" },
+          { "name": "AWS GovCloud (US-West)", "code": "us-gov-west-1" }
+        ]
+      }
     ];
+
     document.addEventListener('DOMContentLoaded', () => {
-      const regionSelect = document.getElementById('region');
-      regions.forEach(region => {
-        const option = document.createElement('option');
-        option.value = region.code;
-        option.textContent = region.name;
-        regionSelect.appendChild(option);
+      const pipelineRegionSelect = document.getElementById('pipelineRegion');
+      const logRegionSelect = document.getElementById('logRegion');
+      const saveButton = document.getElementById('saveButton');
+      const saveStatus = document.getElementById('saveStatus');
+      const displayNameField = document.getElementById('displayName');
+      const accessKeyField = document.getElementById('AWS_ACCESS_KEY_ID');
+      const secretKeyField = document.getElementById('AWS_SECRET_ACCESS_KEY');
+      const pipelineNameField = document.getElementById('pipelineName');
+      const logGroupNameField = document.getElementById('logGroupName');
+
+      const appendRegionOptions = (selectElement) => {
+        regionGroups.forEach((group) => {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = group.label;
+
+          group.regions.forEach((region) => {
+            const option = document.createElement('option');
+            option.value = region.code;
+            option.textContent = `${region.name} (${region.code})`;
+            optgroup.appendChild(option);
+          });
+
+          selectElement.appendChild(optgroup);
+        });
+      };
+
+      appendRegionOptions(pipelineRegionSelect);
+      appendRegionOptions(logRegionSelect);
+
+      const setFieldValue = (element, value) => {
+        element.value = value ?? '';
+      };
+
+      const hydrateForm = (settings) => {
+        if (!settings) return;
+        setFieldValue(displayNameField, settings.displayName);
+        setFieldValue(accessKeyField, settings.AWS_ACCESS_KEY_ID);
+        setFieldValue(secretKeyField, settings.AWS_SECRET_ACCESS_KEY);
+        setFieldValue(pipelineNameField, settings.pipelineName);
+        setFieldValue(logGroupNameField, settings.logGroupName);
+        setFieldValue(pipelineRegionSelect, settings.pipelineRegion || settings.region);
+        setFieldValue(logRegionSelect, settings.logRegion || settings.pipelineRegion || settings.region);
+      };
+
+      const collectFormSettings = () => ({
+        displayName: displayNameField.value?.trim() || '',
+        AWS_ACCESS_KEY_ID: accessKeyField.value?.trim() || '',
+        AWS_SECRET_ACCESS_KEY: secretKeyField.value?.trim() || '',
+        pipelineName: pipelineNameField.value?.trim() || '',
+        pipelineRegion: pipelineRegionSelect.value || '',
+        logGroupName: logGroupNameField.value?.trim() || '',
+        logRegion: logRegionSelect.value || ''
+      });
+
+      const setSaveStatus = (message) => {
+        saveStatus.textContent = message;
+      };
+
+      streamDeckClient.didReceiveSettings.subscribe((event) => {
+        hydrateForm(event?.payload?.settings);
+        setSaveStatus('');
+      });
+
+      streamDeckClient.getSettings().then((payload) => {
+        hydrateForm(payload?.settings);
+      });
+
+      saveButton.addEventListener('click', async () => {
+        const formSettings = collectFormSettings();
+        await streamDeckClient.setSettings(formSettings);
+        setSaveStatus('Saved');
       });
     });
   </script>
 </head>
 
 <body>
-  <!--
-        Learn more about property inspector components at https://sdpi-components.dev/docs/components
-    -->
-  <sdpi-item label="Access Key ID">
-    <sdpi-textfield setting="AWS_ACCESS_KEY_ID" required></sdpi-textfield>
-  </sdpi-item>
-  <sdpi-item label="Secret Access Key">
-    <sdpi-textfield setting="AWS_SECRET_ACCESS_KEY" required></sdpi-textfield>
-  </sdpi-item>
-  <sdpi-item label="AWS Region">
-    <sdpi-select id="region" setting="region" required></sdpi-select>
-  </sdpi-item>
   <sdpi-item label="Display Name">
-    <sdpi-textfield setting="displayName" required></sdpi-textfield>
-  </sdpi-item>
-  <sdpi-item label="Select Pipeline">
-    <sdpi-textfield id="pipelineName" setting="pipelineName" required></sdpi-textfield>
-  </sdpi-item>
-  <sdpi-item label="Log Group Name">
-    <sdpi-textfield setting="logGroupName" placeholder="(optional, for double-click)"></sdpi-textfield>
+    <sdpi-textfield id="displayName"></sdpi-textfield>
   </sdpi-item>
 
+  <sdpi-item label="Access Key ID">
+    <sdpi-textfield id="AWS_ACCESS_KEY_ID" required></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Secret Access Key">
+    <sdpi-textfield id="AWS_SECRET_ACCESS_KEY" required></sdpi-textfield>
+  </sdpi-item>
+
+  <sdpi-item label="Pipeline Name">
+    <sdpi-textfield id="pipelineName" required></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Pipeline Region">
+    <sdpi-select id="pipelineRegion" required></sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item label="Log Group Name">
+    <sdpi-textfield id="logGroupName" placeholder="(optional, for double-click)"></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Log Group Region">
+    <sdpi-select id="logRegion" required></sdpi-select>
+  </sdpi-item>
+
+  <sdpi-item>
+    <sdpi-button id="saveButton" value="save">Save</sdpi-button>
+  </sdpi-item>
+  <sdpi-item>
+    <small id="saveStatus"></small>
+  </sdpi-item>
 </body>
 
 </html>

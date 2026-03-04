@@ -10,13 +10,18 @@ import { createCanvas, Canvas, CanvasRenderingContext2D, loadImage, Image } from
 type CodePipelineMonitorSettings = {
 	AWS_ACCESS_KEY_ID: string;
 	AWS_SECRET_ACCESS_KEY: string;
-	region: string;
+	region?: string; // 舊版相容欄位（deprecated）
+	pipelineRegion?: string;
+	logRegion?: string;
 	pipelineName: string;
-	displayName: string;
+	displayName?: string;
 	logGroupName?: string; // 可選：CloudWatch Log Group 名稱
 };
 
-type ButtonEvent = WillAppearEvent<CodePipelineMonitorSettings> | KeyDownEvent<CodePipelineMonitorSettings>;
+type ButtonEvent =
+	| WillAppearEvent<CodePipelineMonitorSettings>
+	| KeyDownEvent<CodePipelineMonitorSettings>
+	| DidReceiveSettingsEvent<CodePipelineMonitorSettings>;
 
 // Iconify line-md icon path definitions（靜態版，移除動畫）
 type IconPathDef = { d: string; opacity?: number };
@@ -64,13 +69,10 @@ const LOADING_ROTATION_STEP = 24;
 const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
 	'AWS_ACCESS_KEY_ID',
 	'AWS_SECRET_ACCESS_KEY',
-	'region',
-	'pipelineName',
-	'displayName'
+	'pipelineName'
 ];
 const DEBUG_REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
-	'pipelineName',
-	'displayName'
+	'pipelineName'
 ];
 
 // 使用 Map 來追蹤每個按鈕實例的計時器，避免全域變數被共用
@@ -89,9 +91,27 @@ const isDebugMode = (settings: CodePipelineMonitorSettings): boolean => {
 	return settings.pipelineName?.trim().toLowerCase() === DEBUG_PIPELINE_NAME;
 };
 
+const getPipelineRegion = (settings: CodePipelineMonitorSettings): string =>
+	settings.pipelineRegion?.trim() || settings.region?.trim() || '';
+
+const getLogRegion = (settings: CodePipelineMonitorSettings): string =>
+	settings.logRegion?.trim() || getPipelineRegion(settings);
+
+const normalizeSettings = (settings: CodePipelineMonitorSettings): CodePipelineMonitorSettings => ({
+	...settings,
+	pipelineRegion: getPipelineRegion(settings),
+	logRegion: getLogRegion(settings),
+});
+
+const getButtonTitle = (settings: CodePipelineMonitorSettings): string =>
+	settings.displayName?.trim() || settings.pipelineName?.trim() || 'AWS CodePipeline';
+
 const hasRequiredSettings = (settings: CodePipelineMonitorSettings): boolean => {
 	const requiredFields = isDebugMode(settings) ? DEBUG_REQUIRED_FIELDS : REQUIRED_FIELDS;
-	return requiredFields.every(field => settings[field] && settings[field] !== '');
+	if (!requiredFields.every(field => settings[field] && settings[field] !== '')) {
+		return false;
+	}
+	return isDebugMode(settings) || getPipelineRegion(settings) !== '';
 };
 
 /**
@@ -176,7 +196,8 @@ const syncLoadingAnimation = (actionId: string, shouldAnimate: boolean, renderer
  * 取得 AWS Console URL
  */
 const getAwsConsoleUrl = (settings: CodePipelineMonitorSettings): string => {
-	return `https://${settings.region}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${settings.pipelineName}/view?region=${settings.region}`;
+	const pipelineRegion = getPipelineRegion(settings);
+	return `https://${pipelineRegion}.console.aws.amazon.com/codesuite/codepipeline/pipelines/${settings.pipelineName}/view?region=${pipelineRegion}`;
 };
 
 /**
@@ -184,7 +205,8 @@ const getAwsConsoleUrl = (settings: CodePipelineMonitorSettings): string => {
  */
 const getCloudWatchLogGroupUrl = (settings: CodePipelineMonitorSettings): string => {
 	const encodedLogGroup = encodeURIComponent(settings.logGroupName || '');
-	return `https://${settings.region}.console.aws.amazon.com/cloudwatch/home?region=${settings.region}#logsV2:log-groups/log-group/${encodedLogGroup}`;
+	const logRegion = getLogRegion(settings);
+	return `https://${logRegion}.console.aws.amazon.com/cloudwatch/home?region=${logRegion}#logsV2:log-groups/log-group/${encodedLogGroup}`;
 };
 
 /**
@@ -198,13 +220,23 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 	 * we're setting the title to the "count" that is incremented in {@link CodePipelineMonitor.onKeyDown}.
 	 */
 	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<CodePipelineMonitorSettings>): void | Promise<void> {
-		ev.action.setSettings(ev.payload.settings);
+		const normalized = normalizeSettings(ev.payload.settings);
+		ev.action.setSettings(normalized);
+		buildButton({
+			...ev,
+			payload: {
+				...ev.payload,
+				settings: normalized
+			}
+		});
 	}
 	override onSendToPlugin(_ev: SendToPluginEvent<JsonValue, JsonObject>): void | Promise<void> {
 		streamDeck.logger.debug('onSendToPlugin');
 	}
 	override async onWillAppear(ev: WillAppearEvent<CodePipelineMonitorSettings>): Promise<void> {
 		streamDeck.logger.debug('onWillAppear');
+		const normalized = normalizeSettings(ev.payload.settings);
+		await ev.action.setSettings(normalized);
 		buildButton(ev);
 	}
 	override async onWillDisappear(ev: WillDisappearEvent<CodePipelineMonitorSettings>): Promise<void> {
@@ -301,8 +333,8 @@ const buildButton = (ev: ButtonEvent): void => {
 const renderInitButton = (ev: ButtonEvent): void => {
 	const { canvas, ctx } = createButtonCanvas();
 
-	if (ev.payload.settings.displayName) {
-		drawTitle(ctx, ev.payload.settings.displayName);
+	if (ev.payload.settings.displayName || ev.payload.settings.pipelineName) {
+		drawTitle(ctx, getButtonTitle(ev.payload.settings));
 	} else {
 		ctx.fillStyle = 'white';
 		ctx.font = '20px sans-serif bold';
@@ -439,7 +471,7 @@ const drawFooter = async (ctx: CanvasRenderingContext2D, actionId: string, isAll
 
 const renderDebugFrame = async (ev: ButtonEvent, statuses: string[]): Promise<void> => {
 	const { canvas, ctx } = createButtonCanvas();
-	drawTitle(ctx, ev.payload.settings.displayName);
+	drawTitle(ctx, getButtonTitle(ev.payload.settings));
 	await drawStatusSymbols(ctx, ev.action.id, statuses);
 	await drawFooter(
 		ctx,
@@ -485,16 +517,17 @@ const runDebugDemo = (ev: ButtonEvent): void => {
 };
 
 const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
-	process.env.AWS_ACCESS_KEY_ID = ev.payload.settings.AWS_ACCESS_KEY_ID;
-	process.env.AWS_SECRET_ACCESS_KEY = ev.payload.settings.AWS_SECRET_ACCESS_KEY;
+	const settings = normalizeSettings(ev.payload.settings);
+	process.env.AWS_ACCESS_KEY_ID = settings.AWS_ACCESS_KEY_ID;
+	process.env.AWS_SECRET_ACCESS_KEY = settings.AWS_SECRET_ACCESS_KEY;
 
 	const codePipelineClient = new CodePipelineClient({
-		region: ev.payload.settings.region,
+		region: getPipelineRegion(settings),
 		credentials: fromEnv()
 	});
 
 	try {
-		const command = new GetPipelineStateCommand({ name: ev.payload.settings.pipelineName });
+		const command = new GetPipelineStateCommand({ name: settings.pipelineName });
 		const response = await codePipelineClient.send(command);
 		streamDeck.logger.info('AWS CodePipeline Response', response);
 
@@ -503,7 +536,7 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		const actionId = ev.action.id;
 		const renderCurrent = async () => {
 			const { canvas, ctx } = createButtonCanvas();
-			drawTitle(ctx, ev.payload.settings.displayName);
+			drawTitle(ctx, getButtonTitle(settings));
 			await drawStatusSymbols(ctx, actionId, allStatuses);
 			await drawFooter(ctx, actionId, allStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
 			ev.action.setImage(canvas.toDataURL());
