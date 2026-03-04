@@ -1,6 +1,7 @@
 {
     "scripts": {
-        "build": "rollup -c",
+        "build": "node scripts/build.mjs",
+        "build:bundle": "rollup -c",
         "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.phantas-weng.aws-monitor\""
     },
     "type": "module",
@@ -20,7 +21,8 @@
     "dependencies": {
         "@aws-sdk/client-codepipeline": "^3.858.0",
         "@aws-sdk/credential-providers": "^3.858.0",
-        "@elgato/streamdeck": "^1.0.0",
+        "@elgato/streamdeck": "^2.0.2",
+        "@elgato/utils": "^0.1.0",
         "canvas": "^3.1.2",
         "dayjs": "^1.11.13"
     }

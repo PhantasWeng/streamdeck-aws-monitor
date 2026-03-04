@@ -1,4 +1,5 @@
-import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppearEvent, SendToPluginEvent, JsonValue, JsonObject, DidReceiveSettingsEvent, WillDisappearEvent } from "@elgato/streamdeck";
+import streamDeck, { action, KeyDownEvent, KeyUpEvent, SingletonAction, WillAppearEvent, SendToPluginEvent, DidReceiveSettingsEvent, WillDisappearEvent } from "@elgato/streamdeck";
+import type { JsonObject, JsonValue } from "@elgato/utils";
 import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
 import dayjs from 'dayjs';
