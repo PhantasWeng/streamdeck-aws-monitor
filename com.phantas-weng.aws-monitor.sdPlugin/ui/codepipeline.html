@@ -81,6 +81,7 @@
       const secretKeyField = document.getElementById('AWS_SECRET_ACCESS_KEY');
       const pipelineNameField = document.getElementById('pipelineName');
       const logGroupNameField = document.getElementById('logGroupName');
+      const pollingMaxMinutesField = document.getElementById('pollingMaxMinutes');
 
       const appendRegionOptions = (selectElement) => {
         regionGroups.forEach((group) => {
@@ -114,6 +115,7 @@
         setFieldValue(logGroupNameField, settings.logGroupName);
         setFieldValue(pipelineRegionSelect, settings.pipelineRegion || settings.region);
         setFieldValue(logRegionSelect, settings.logRegion || settings.pipelineRegion || settings.region);
+        setFieldValue(pollingMaxMinutesField, settings.pollingMaxMinutes || 30);
       };
 
       const collectFormSettings = () => ({
@@ -123,7 +125,8 @@
         pipelineName: pipelineNameField.value?.trim() || '',
         pipelineRegion: pipelineRegionSelect.value || '',
         logGroupName: logGroupNameField.value?.trim() || '',
-        logRegion: logRegionSelect.value || ''
+        logRegion: logRegionSelect.value || '',
+        pollingMaxMinutes: pollingMaxMinutesField.value?.trim() || '30'
       });
 
       const setSaveStatus = (message) => {
@@ -137,6 +140,9 @@
 
       streamDeckClient.getSettings().then((payload) => {
         hydrateForm(payload?.settings);
+        if (!pollingMaxMinutesField.value) {
+          pollingMaxMinutesField.value = '30';
+        }
       });
 
       saveButton.addEventListener('click', async () => {
@@ -172,6 +178,9 @@
   </sdpi-item>
   <sdpi-item label="Log Group Region">
     <sdpi-select id="logRegion" required></sdpi-select>
+  </sdpi-item>
+  <sdpi-item label="Polling Max (minutes)">
+    <sdpi-textfield id="pollingMaxMinutes" type="number" min="1" placeholder="30"></sdpi-textfield>
   </sdpi-item>
 
   <sdpi-item>

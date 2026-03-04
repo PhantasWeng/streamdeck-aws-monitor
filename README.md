@@ -112,6 +112,7 @@ You'll need to provide your AWS credentials in the plugin settings:
 5. **Display Name**: (Optional) A custom name for the button. If empty, pipeline name is used
 6. **Pipeline Name**: The name of your CodePipeline
 7. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
+8. **Polling Max (minutes)**: (Optional, default `30`) Stop polling when timeout is reached
 
 ### Debug Demo Mode
 
@@ -123,10 +124,12 @@ For quick UI testing without AWS access, set:
 In debug mode:
 
 - Only `Pipeline Name` is required (`Display Name` is optional)
-- The plugin simulates 3 stages, one step every 3 seconds
-- Each stage randomly succeeds or fails
-- If one stage fails, remaining stages are marked as failed
-- Press the key again to rerun the demo
+- Initial state is `[loading, loading, loading]`
+- 1st poll: `[Succeeded, Failed, Failed]`
+- 2nd poll: `[Succeeded, Succeeded, Failed]`
+- 3rd poll onward: random between `[Succeeded, Succeeded, Succeeded]` and `[Succeeded, Succeeded, Failed]`
+- Polling stops when all stages are `Succeeded`, or when `Polling Max` timeout is reached (`終止`)
+- On timeout, stage status icons stay at the last fetched state (only polling stops + footer shows `終止`)
 
 ### IAM Permissions
 
@@ -162,6 +165,7 @@ Your AWS credentials need the following permissions:
    - **Short press**: Refresh pipeline status
    - **Double-click**: Open CloudWatch Log Group (requires Log Group Name configured)
    - **Long press (1.3s)**: Open pipeline in AWS Console
+   - **Polling timeout**: Footer shows `終止` when polling exceeds `Polling Max`
 
 ### Debug Mode Key Behavior (`Pipeline Name = debug`)
 

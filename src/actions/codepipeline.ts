@@ -13,6 +13,7 @@ type CodePipelineMonitorSettings = {
 	region?: string; // 舊版相容欄位（deprecated）
 	pipelineRegion?: string;
 	logRegion?: string;
+	pollingMaxMinutes?: number | string;
 	pipelineName: string;
 	displayName?: string;
 	logGroupName?: string; // 可選：CloudWatch Log Group 名稱
@@ -51,6 +52,12 @@ const ICON_ARROW_DOWN: IconPathDef[] = [
 	{ d: 'M7 13l5 5l5-5' },
 ];
 
+// Footer 終止用圖示（line-md--menu-to-close-transition 靜態終態）
+const ICON_MENU_TO_CLOSE_TRANSITION: IconPathDef[] = [
+	{ d: 'M6 6l12 12' },
+	{ d: 'M18 6l-12 12' },
+];
+
 // 常數
 const CANVAS_SIZE = 144;
 const LONG_PRESS_DURATION = 1300;
@@ -64,6 +71,7 @@ const STATUS_ICON_Y = 50;
 const LOADING_ANIMATION_FPS = 10;
 const LOADING_ANIMATION_INTERVAL = Math.round(1000 / LOADING_ANIMATION_FPS);
 const LOADING_ROTATION_STEP = 24;
+const DEFAULT_POLLING_MAX_MINUTES = 30;
 
 // 必填欄位
 const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
@@ -83,6 +91,7 @@ const loadingAnimationTimers = new Map<string, NodeJS.Timeout>();
 const loadingAngles = new Map<string, number>();
 const loadingRenderers = new Map<string, () => Promise<void>>();
 const iconImageCache = new Map<string, Promise<Image>>();
+const pollingStartedAtMap = new Map<string, number>();
 
 /**
  * 檢查必填設定是否完整（不包含 logGroupName）
@@ -97,10 +106,19 @@ const getPipelineRegion = (settings: CodePipelineMonitorSettings): string =>
 const getLogRegion = (settings: CodePipelineMonitorSettings): string =>
 	settings.logRegion?.trim() || getPipelineRegion(settings);
 
+const getPollingMaxMinutes = (settings: CodePipelineMonitorSettings): number => {
+	const parsed = Number(settings.pollingMaxMinutes);
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	return DEFAULT_POLLING_MAX_MINUTES;
+};
+
 const normalizeSettings = (settings: CodePipelineMonitorSettings): CodePipelineMonitorSettings => ({
 	...settings,
 	pipelineRegion: getPipelineRegion(settings),
 	logRegion: getLogRegion(settings),
+	pollingMaxMinutes: getPollingMaxMinutes(settings),
 });
 
 const getButtonTitle = (settings: CodePipelineMonitorSettings): string =>
@@ -156,6 +174,10 @@ const clearLoadingAnimation = (actionId: string): void => {
 	}
 	loadingAngles.delete(actionId);
 	loadingRenderers.delete(actionId);
+};
+
+const clearPollingState = (actionId: string): void => {
+	pollingStartedAtMap.delete(actionId);
 };
 
 /**
@@ -244,6 +266,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 		// 清理該按鈕實例的計時器
 		clearRefreshTimer(ev.action.id);
 		clearLoadingAnimation(ev.action.id);
+		clearPollingState(ev.action.id);
 		const pressTimer = pressTimers.get(ev.action.id);
 		if (pressTimer) {
 			clearTimeout(pressTimer);
@@ -323,9 +346,12 @@ const buildButton = (ev: ButtonEvent): void => {
 		if (isDebugMode(ev.payload.settings)) {
 			runDebugDemo(ev);
 		} else {
-			getPipelineState(ev);
+			getPipelineState(ev, true);
 		}
 	} else {
+		clearRefreshTimer(ev.action.id);
+		clearLoadingAnimation(ev.action.id);
+		clearPollingState(ev.action.id);
 		renderInitButton(ev);
 	}
 };
@@ -469,57 +495,99 @@ const drawFooter = async (ctx: CanvasRenderingContext2D, actionId: string, isAll
 	}
 };
 
-const renderDebugFrame = async (ev: ButtonEvent, statuses: string[]): Promise<void> => {
+const drawTerminatedFooter = async (ctx: CanvasRenderingContext2D): Promise<void> => {
+	ctx.fillStyle = 'white';
+	ctx.font = '22px sans-serif';
+	ctx.textAlign = 'center';
+	ctx.fillText(dayjs().format('HH:mm'), 52, 110);
+	await drawIcon(ctx, ICON_MENU_TO_CLOSE_TRANSITION, '#f87171', 92, 106, 24);
+};
+
+const renderDebugFrame = async (ev: ButtonEvent, statuses: string[], isTerminated = false): Promise<void> => {
 	const { canvas, ctx } = createButtonCanvas();
 	drawTitle(ctx, getButtonTitle(ev.payload.settings));
 	await drawStatusSymbols(ctx, ev.action.id, statuses);
-	await drawFooter(
-		ctx,
-		ev.action.id,
-		statuses.every((status) => status === 'Succeeded'),
-		refreshTimers.has(ev.action.id)
-	);
+	if (isTerminated) {
+		await drawTerminatedFooter(ctx);
+	} else {
+		await drawFooter(
+			ctx,
+			ev.action.id,
+			statuses.every((status) => status === 'Succeeded'),
+			refreshTimers.has(ev.action.id)
+		);
+	}
 	ev.action.setImage(canvas.toDataURL());
 };
 
 const runDebugDemo = (ev: ButtonEvent): void => {
 	const actionId = ev.action.id;
+	const settings = normalizeSettings(ev.payload.settings);
+	const pollingMaxMs = getPollingMaxMinutes(settings) * 60 * 1000;
 	clearRefreshTimer(actionId);
+	clearPollingState(actionId);
 
 	const statuses = Array.from({ length: DEBUG_STAGE_COUNT }, () => 'InProgress');
-	let stageIndex = 0;
+	let isTerminated = false;
+	let debugTick = 0;
+	const startedAt = Date.now();
 	const debugTimer = setInterval(() => {
-		const stageResult = Math.random() >= 0.5 ? 'Succeeded' : 'Failed';
-		statuses[stageIndex] = stageResult;
-		stageIndex += 1;
-
-		if (stageResult === 'Failed') {
-			for (let i = stageIndex; i < DEBUG_STAGE_COUNT; i += 1) {
-				statuses[i] = 'Failed';
-			}
-		}
-
-		if (stageResult === 'Failed' || stageIndex >= DEBUG_STAGE_COUNT) {
+		if (Date.now() - startedAt >= pollingMaxMs) {
+			isTerminated = true;
 			clearRefreshTimer(actionId);
+			const renderTerminated = () => renderDebugFrame(ev, statuses, true);
+			void renderTerminated();
+			syncLoadingAnimation(actionId, false, renderTerminated);
+			return;
 		}
 
-		const renderDebug = () => renderDebugFrame(ev, statuses);
+		if (debugTick === 0) {
+			statuses[0] = 'Succeeded';
+			statuses[1] = 'Failed';
+			statuses[2] = 'Failed';
+		} else if (debugTick === 1) {
+			statuses[0] = 'Succeeded';
+			statuses[1] = 'Succeeded';
+			statuses[2] = 'Failed';
+		} else {
+			const isAllSucceededSample = Math.random() >= 0.5;
+			statuses[0] = 'Succeeded';
+			statuses[1] = 'Succeeded';
+			statuses[2] = isAllSucceededSample ? 'Succeeded' : 'Failed';
+		}
+		debugTick += 1;
+
+		const isAllSucceeded = statuses.every((status) => status === 'Succeeded');
+
+		const renderDebug = () => renderDebugFrame(ev, statuses, isTerminated);
 		void renderDebug();
+
+		if (isAllSucceeded) {
+			clearRefreshTimer(actionId);
+			syncLoadingAnimation(actionId, false, renderDebug);
+			return;
+		}
+
 		const hasLoading = statuses.some(isLoadingStatus);
 		const shouldAnimate = hasLoading || refreshTimers.has(actionId);
 		syncLoadingAnimation(actionId, shouldAnimate, renderDebug);
 	}, DEBUG_STEP_INTERVAL);
 
 	refreshTimers.set(actionId, debugTimer);
-	const renderDebug = () => renderDebugFrame(ev, statuses);
+	const renderDebug = () => renderDebugFrame(ev, statuses, isTerminated);
 	void renderDebug();
 	syncLoadingAnimation(actionId, true, renderDebug);
 };
 
-const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
+const getPipelineState = async (ev: ButtonEvent, resetPollingWindow = false): Promise<void> => {
 	const settings = normalizeSettings(ev.payload.settings);
 	process.env.AWS_ACCESS_KEY_ID = settings.AWS_ACCESS_KEY_ID;
 	process.env.AWS_SECRET_ACCESS_KEY = settings.AWS_SECRET_ACCESS_KEY;
+	const actionId = ev.action.id;
+
+	if (resetPollingWindow) {
+		clearPollingState(actionId);
+	}
 
 	const codePipelineClient = new CodePipelineClient({
 		region: getPipelineRegion(settings),
@@ -533,12 +601,30 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 
 		const allStatuses = response.stageStates?.map(stage => stage.latestExecution?.status ?? '') ?? [];
 		const isAllSucceeded = allStatuses.every(status => status === 'Succeeded');
-		const actionId = ev.action.id;
+		const pollingMaxMs = getPollingMaxMinutes(settings) * 60 * 1000;
+		let isTerminated = false;
+
+		if (isAllSucceeded) {
+			clearPollingState(actionId);
+		} else {
+			if (!pollingStartedAtMap.has(actionId)) {
+				pollingStartedAtMap.set(actionId, Date.now());
+			}
+			const startedAt = pollingStartedAtMap.get(actionId) ?? Date.now();
+			if (Date.now() - startedAt >= pollingMaxMs) {
+				isTerminated = true;
+			}
+		}
+
 		const renderCurrent = async () => {
 			const { canvas, ctx } = createButtonCanvas();
 			drawTitle(ctx, getButtonTitle(settings));
 			await drawStatusSymbols(ctx, actionId, allStatuses);
-			await drawFooter(ctx, actionId, allStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
+			if (isTerminated) {
+				await drawTerminatedFooter(ctx);
+			} else {
+				await drawFooter(ctx, actionId, allStatuses.every(status => status === 'Succeeded'), refreshTimers.has(actionId));
+			}
 			ev.action.setImage(canvas.toDataURL());
 		};
 
@@ -547,6 +633,9 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		if (isAllSucceeded) {
 			clearRefreshTimer(actionId);
 			streamDeck.logger.debug('All Succeeded, stop refresh');
+		} else if (isTerminated) {
+			clearRefreshTimer(actionId);
+			streamDeck.logger.debug('Polling exceeded max time, terminated');
 		} else {
 			// 清理舊的計時器
 			clearRefreshTimer(actionId);
@@ -560,7 +649,7 @@ const getPipelineState = async (ev: ButtonEvent): Promise<void> => {
 		// 繪製按鈕
 		await renderCurrent();
 		const hasLoading = allStatuses.some(isLoadingStatus);
-		const shouldAnimate = hasLoading || refreshTimers.has(actionId);
+		const shouldAnimate = !isTerminated && (hasLoading || refreshTimers.has(actionId));
 		syncLoadingAnimation(actionId, shouldAnimate, renderCurrent);
 	} catch (error) {
 		streamDeck.logger.error(error);
