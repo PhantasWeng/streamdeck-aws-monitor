@@ -2,6 +2,7 @@
     "scripts": {
         "build": "node scripts/build.mjs",
         "build:bundle": "rollup -c",
+        "screenshots:key-states": "node scripts/generate-readme-key-states.mjs",
         "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.phantas-weng.aws-monitor\""
     },
     "type": "module",
