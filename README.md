@@ -9,18 +9,27 @@ A Stream Deck plugin that provides real-time monitoring of AWS services, startin
 ## Features
 
 - **Real-time CodePipeline Monitoring**: Monitor the status of your AWS CodePipeline deployments
-- **Visual Status Indicators**: Clear visual representation of pipeline stages with color-coded status symbols
+- **Visual Status Indicators**: Clear stage-by-stage status icons with color-coded symbols
+- **Status Transition Animation**: When a stage status changes during polling, that stage shows loading for `0.3s` before switching to `✓` / `X`
 - **Quick Access**: Long-press (1.3 seconds) to open the pipeline in AWS Console
 - **CloudWatch Integration**: Double-click to open CloudWatch Log Group (optional)
 - **Debug Demo Mode**: Set `Pipeline Name` to `debug` to run a local 3-stage simulation without AWS credentials
-- **Multi-region Support**: Support for all AWS regions
+- **Polling Timeout Control**: Configure max polling duration (default `30` minutes). Footer shows `終止` when timeout is reached
+- **Multi-region Support**: Independent region selection for Pipeline and Log Group, with backward compatibility for legacy `region` setting
 - **Custom Display Names**: Set custom names for your pipeline buttons
 
 ## Status Symbols
 
 - ✅ **Green Checkmark**: Stage completed successfully
 - ❌ **Red X**: Stage failed
-- 🔵 **Blue Dot**: Stage in progress or pending
+- 🔄 **Blue Loading Spinner**: Stage in progress/pending, or temporary transition animation when status changes
+
+## Recent Updates
+
+- `fb82192`: Added per-stage status transition tracking so changed stages animate loading for `0.3s` before showing final status icons.
+- `7b8768e`: Refined action/plugin images and improved button rendering for clearer visual feedback.
+- `f4b1fff`: Added configurable polling max timeout and termination footer behavior.
+- `ce7ed5c`: Updated settings schema and UI for `pipelineRegion` / `logRegion`, while keeping compatibility with legacy `region`.
 
 ## Requirements
 
@@ -128,6 +137,7 @@ In debug mode:
 - 1st poll: `[Succeeded, Failed, Failed]`
 - 2nd poll: `[Succeeded, Succeeded, Failed]`
 - 3rd poll onward: random between `[Succeeded, Succeeded, Succeeded]` and `[Succeeded, Succeeded, Failed]`
+- Stage status changes also use the same `0.3s` loading transition animation before `✓` / `X`
 - Polling stops when all stages are `Succeeded`, or when `Polling Max` timeout is reached (`終止`)
 - On timeout, stage status icons stay at the last fetched state (only polling stops + footer shows `終止`)
 
