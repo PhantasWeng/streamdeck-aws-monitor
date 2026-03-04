@@ -3,6 +3,8 @@ import { fromEnv } from "@aws-sdk/credential-providers";
 import { CodePipelineClient, GetPipelineStateCommand } from "@aws-sdk/client-codepipeline";
 import dayjs from 'dayjs';
 import { createCanvas, Canvas, CanvasRenderingContext2D, loadImage, Image } from 'canvas';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Settings for {@link CodePipelineMonitor}.
@@ -92,6 +94,11 @@ const loadingAngles = new Map<string, number>();
 const loadingRenderers = new Map<string, () => Promise<void>>();
 const iconImageCache = new Map<string, Promise<Image>>();
 const pollingStartedAtMap = new Map<string, number>();
+const actionKeyIconPath = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	'../imgs/actions/codepipeline/key@2x.png'
+);
+const actionKeyIconPromise = loadImage(actionKeyIconPath);
 
 /**
  * 檢查必填設定是否完整（不包含 logGroupName）
@@ -352,24 +359,28 @@ const buildButton = (ev: ButtonEvent): void => {
 		clearRefreshTimer(ev.action.id);
 		clearLoadingAnimation(ev.action.id);
 		clearPollingState(ev.action.id);
-		renderInitButton(ev);
+		void renderInitButton(ev);
 	}
 };
 
-const renderInitButton = (ev: ButtonEvent): void => {
+const renderInitButton = async (ev: ButtonEvent): Promise<void> => {
 	const { canvas, ctx } = createButtonCanvas();
+	const title = getButtonTitle(ev.payload.settings);
+	drawTitle(ctx, title);
 
-	if (ev.payload.settings.displayName || ev.payload.settings.pipelineName) {
-		drawTitle(ctx, getButtonTitle(ev.payload.settings));
-	} else {
-		ctx.fillStyle = 'white';
-		ctx.font = '20px sans-serif bold';
-		ctx.textAlign = 'center';
-		ctx.fillText('AWS CodePipeline', 72, 20, 124);
-		ctx.font = '18px sans-serif';
-		ctx.fillStyle = 'orange';
-		ctx.fillText('Not Configured', 72, 70);
+	try {
+		const iconImg = await actionKeyIconPromise;
+		ctx.drawImage(iconImg, 36, 37, 72, 72);
+	} catch (error) {
+		streamDeck.logger.error('Failed to load action key icon', error);
 	}
+
+	// High-contrast status text (no badge background)
+	ctx.fillStyle = '#f59e0b';
+	ctx.font = '15px sans-serif bold';
+	ctx.textAlign = 'center';
+	ctx.fillText('NOT CONFIGURED', 72, 110, 132);
+
 	ev.action.setImage(canvas.toDataURL());
 };
 
