@@ -1,246 +1,185 @@
-> [!WARNING]  
-> **WIP: This project is currently under active development.**  
-> Installation steps, folder structure, configuration methods, and runtime behavior are all subject to change.
+# AWS Monitor for Stream Deck
+[![Stream Deck SDK](https://img.shields.io/badge/Stream%20Deck%20SDK-v2-111827?logo=elgato)](https://docs.elgato.com/streamdeck/sdk/)
+[![Node](https://img.shields.io/badge/Node-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Windows%2010%2B-2563eb)](https://docs.elgato.com/streamdeck/sdk/introduction/distribution)
 
-# AWS Monitor - Stream Deck Plugin
+A Stream Deck plugin for monitoring AWS services, starting with **CodePipeline**.
 
-A Stream Deck plugin that provides real-time monitoring of AWS services, starting with AWS CodePipeline. This plugin allows you to monitor the status of your CodePipeline deployments directly from your Stream Deck.
+It renders stage-by-stage status directly on the key and supports fast actions for refresh, AWS Console open, and optional CloudWatch log access.
+
+## Screenshots
+
+Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
+
+![Key states overview](docs/images/key-states/overview.png)
+
+## Why This Plugin
+
+- See deployment status without switching tabs.
+- Read stage-level result at a glance (`Succeeded` / `Failed` / `InProgress`).
+- Keep a live operational signal on your Stream Deck.
 
 ## Features
 
-- **Real-time CodePipeline Monitoring**: Monitor the status of your AWS CodePipeline deployments
-- **Visual Status Indicators**: Clear stage-by-stage status icons with color-coded symbols
-- **Status Transition Animation**: When a stage status changes during polling, that stage shows loading for `0.3s` before switching to `✓` / `X`
-- **Quick Access**: Long-press (1.3 seconds) to open the pipeline in AWS Console
-- **CloudWatch Integration**: Double-click to open CloudWatch Log Group (optional)
-- **Debug Demo Mode**: Set `Pipeline Name` to `debug` to run a local 3-stage simulation without AWS credentials
-- **Polling Timeout Control**: Configure max polling duration (default `30` minutes). Footer shows `終止` when timeout is reached
-- **Multi-region Support**: Independent region selection for Pipeline and Log Group, with backward compatibility for legacy `region` setting
-- **Custom Display Names**: Set custom names for your pipeline buttons
-
-## Status Symbols
-
-- ✅ **Green Checkmark**: Stage completed successfully
-- ❌ **Red X**: Stage failed
-- 🔄 **Blue Loading Spinner**: Stage in progress/pending, or temporary transition animation when status changes
-
-## Recent Updates
-
-- `fb82192`: Added per-stage status transition tracking so changed stages animate loading for `0.3s` before showing final status icons.
-- `7b8768e`: Refined action/plugin images and improved button rendering for clearer visual feedback.
-- `f4b1fff`: Added configurable polling max timeout and termination footer behavior.
-- `ce7ed5c`: Updated settings schema and UI for `pipelineRegion` / `logRegion`, while keeping compatibility with legacy `region`.
+- Real-time CodePipeline stage monitoring
+- Visual key rendering with status icons and timestamp footer
+- Status transition animation (`0.3s` loading transition on state change)
+- Long press (`1.3s`) to open pipeline in AWS Console
+- Double-click to open CloudWatch Log Group (optional)
+- Debug simulation mode (`Pipeline Name = debug`)
+- Configurable polling timeout (`Polling Max (minutes)`)
+- Independent `Pipeline Region` and `Log Group Region`
 
 ## Requirements
 
-- **Stream Deck Software**: Version 6.5 or higher
-- **Operating System**: 
-  - macOS 12 or higher
-  - Windows 10 or higher
-- **Node.js**: Version 20
-- **AWS Account**: With appropriate IAM permissions for CodePipeline
+- Stream Deck software `6.5+`
+- Node.js `20`
+- macOS `12+` or Windows `10+`
+- AWS credentials with CodePipeline read access
 
-## Installation
+## Quick Start
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd aws-monitor
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   yarn install
-   ```
-
-3. **Build the plugin**:
-   ```bash
-   yarn build
-   ```
-
-4. **Install the plugin**:
-   ```bash
-   streamdeck install com.phantas-weng.aws-monitor.sdPlugin
-   ```
-
-## Development
-
-### Prerequisites
-
-- Node.js 20
-- Yarn package manager
-- Stream Deck CLI (`@elgato/cli`)
-
-### Development Setup
-
-1. **Install development dependencies**:
-   ```bash
-   yarn install
-   ```
-
-2. **Start development mode**:
-   ```bash
-   yarn watch
-   ```
-   This will automatically rebuild and restart the plugin when changes are made.
-
-3. **Launch Stream Deck in debug mode** (important for viewing console logs):
-   ```bash
-   open -a "Elgato Stream Deck" --args -debug
-   ```
-   This opens Stream Deck with debug mode enabled, allowing you to view plugin logs in the developer console.
-
-### Project Structure
-
-```
-aws-monitor/
-├── src/
-│   ├── actions/
-│   │   └── codepipeline.ts      # CodePipeline monitoring action
-│   └── plugin.ts                # Main plugin entry point
-├── com.phantas-weng.aws-monitor.sdPlugin/
-│   ├── manifest.json            # Plugin manifest
-│   ├── ui/
-│   │   └── codepipeline.html    # Property inspector UI
-│   └── imgs/                    # Plugin icons and images
-├── package.json                 # Dependencies and scripts
-├── rollup.config.mjs           # Build configuration
-└── tsconfig.json               # TypeScript configuration
-```
-
-## Configuration
-
-### AWS Credentials
-
-You'll need to provide your AWS credentials in the plugin settings:
-
-1. **Access Key ID**: Your AWS access key ID
-2. **Secret Access Key**: Your AWS secret access key
-3. **Pipeline Region**: Select the AWS region where your pipeline is located
-4. **Log Group Region**: Select the AWS region where your CloudWatch log group is located
-5. **Display Name**: (Optional) A custom name for the button. If empty, pipeline name is used
-6. **Pipeline Name**: The name of your CodePipeline
-7. **Log Group Name**: (Optional) CloudWatch Log Group name for double-click access
-8. **Polling Max (minutes)**: (Optional, default `30`) Stop polling when timeout is reached
-
-### Debug Demo Mode
-
-For quick UI testing without AWS access, set:
-
-1. **Pipeline Name**: `debug`
-2. **Display Name**: Any label you want
-
-In debug mode:
-
-- Only `Pipeline Name` is required (`Display Name` is optional)
-- Initial state is `[loading, loading, loading]`
-- 1st poll: `[Succeeded, Failed, Failed]`
-- 2nd poll: `[Succeeded, Succeeded, Failed]`
-- 3rd poll onward: random between `[Succeeded, Succeeded, Succeeded]` and `[Succeeded, Succeeded, Failed]`
-- Stage status changes also use the same `0.3s` loading transition animation before `✓` / `X`
-- Polling stops when all stages are `Succeeded`, or when `Polling Max` timeout is reached (`終止`)
-- On timeout, stage status icons stay at the last fetched state (only polling stops + footer shows `終止`)
-
-### IAM Permissions
-
-Your AWS credentials need the following permissions:
-
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "codepipeline:GetPipelineState"
-            ],
-            "Resource": "arn:aws:codepipeline:*:*:*"
-        }
-    ]
-}
+```bash
+git clone https://github.com/PhantasWeng/streamdeck-aws-monitor
+cd streamdeck-aws-monitor
+npm install
+npm build:bundle
+npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 ```
 
 ## Usage
 
-1. **Add the action to your Stream Deck**:
-   - Open Stream Deck software
-   - Drag the "CodePipeline" action to a button
+1. Open Stream Deck and drag **CodePipeline** action to a key.
+2. Fill settings in Property Inspector and save.
+3. Use key interactions:
 
-2. **Configure the action**:
-   - Click on the button to open the property inspector
-   - Enter your AWS credentials and pipeline details
-   - Save the settings
+- Short press: Refresh Status
+- Double-click: Open CloudWatch Log Group (when configured)
+- Long press (`1.3s`): Open CodePipeline in AWS Console
 
-3. **Monitor your pipeline**:
-   - **Short press**: Refresh pipeline status
-   - **Double-click**: Open CloudWatch Log Group (requires Log Group Name configured)
-   - **Long press (1.3s)**: Open pipeline in AWS Console
-   - **Polling timeout**: Footer shows `終止` when polling exceeds `Polling Max`
+## Configuration
 
-### Debug Mode Key Behavior (`Pipeline Name = debug`)
+| Field | Required | Description |
+| --- | --- | --- |
+| `AWS_ACCESS_KEY_ID` | Yes (except debug) | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | Yes (except debug) | AWS secret key |
+| `Pipeline Name` | Yes | CodePipeline name; set `debug` to enable simulation mode |
+| `Pipeline Region` | Yes (except debug) | Region for CodePipeline API calls |
+| `Display Name` | No | Custom key title |
+| `Log Group Name` | No | CloudWatch log group for double-click action |
+| `Log Group Region` | No | Region for CloudWatch log URL; defaults to pipeline region |
+| `Polling Max (minutes)` | No | Polling timeout; default `30` |
 
-- **Short press**: Restart debug simulation
-- **Double-click**: No action
-- **Long press**: No action
+## Debug Mode
 
-## Building
+Set `Pipeline Name` to `debug`.
 
-### Production Build
+Behavior:
+- Starts with three loading stages
+- Simulates partial and full completion states
+- Uses the same rendering and transition logic as normal mode
+- Stops polling when all succeeded or timeout is reached
 
-```bash
-yarn build
+## IAM Permissions
+
+Minimum policy example:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["codepipeline:GetPipelineState"],
+      "Resource": "arn:aws:codepipeline:*:*:*"
+    }
+  ]
+}
 ```
 
-This will create the compiled plugin in `com.phantas-weng.aws-monitor.sdPlugin/bin/`.
+## Development
 
-### Development Build
+Run watch mode:
 
 ```bash
 yarn watch
 ```
 
-This will watch for changes and automatically rebuild the plugin.
+Run Stream Deck in debug mode (macOS):
 
-## Dependencies
+```bash
+open -a "Elgato Stream Deck" --args -debug
+```
 
-### Production Dependencies
+Project structure:
 
-- `@aws-sdk/client-codepipeline`: AWS CodePipeline client
-- `@aws-sdk/credential-providers`: AWS credential management
-- `@elgato/streamdeck`: Stream Deck SDK
-- `canvas`: Canvas API for image generation
+```text
+aws-monitor/
+├── src/
+│   ├── actions/codepipeline.ts
+│   └── plugin.ts
+├── com.phantas-weng.aws-monitor.sdPlugin/
+│   ├── manifest.json
+│   ├── ui/codepipeline.html
+│   └── imgs/
+├── scripts/
+├── package.json
+└── rollup.config.mjs
+```
 
-### Development Dependencies
+## Release Workflow
 
-- `@elgato/cli`: Stream Deck CLI
-- `@rollup/plugin-*`: Rollup build plugins
-- `typescript`: TypeScript compiler
-- `rollup`: Module bundler
+Use:
+
+```bash
+yarn build
+```
+
+What it does:
+- Runs `build:bundle`
+- Shows current plugin version from `manifest.json`
+- Prompts for next version
+- Packs plugin into `releases/`
+- Creates git tag `v<version>`
+
+Notes:
+- Build stops if tag already exists.
+- Tag push is manual:
+
+```bash
+git push origin <tag>
+```
+
+## Screenshot Asset Generation
+
+Regenerate README screenshot assets:
+
+```bash
+yarn screenshots:key-states
+```
+
+This regenerates `docs/images/key-states/*.png`, including `overview.png`.
+
+## Troubleshooting
+
+- Key stays in `NOT CONFIGURED`:
+  verify required fields are saved.
+- Double-click does nothing:
+  check `Log Group Name` and `Log Group Region`.
+- No updates after completion:
+  polling intentionally stops when all stages are `Succeeded`; short-press to refresh.
 
 ## Contributing
 
-1. Fork the repository
+Issues and pull requests are welcome.
+
+Recommended flow:
+
+1. Fork the repo
 2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+3. Make changes and validate behavior on Stream Deck
+4. Open a pull request with context and screenshots
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Author
-
-**Phantas Weng**
-
-## Version
-
-Current version: 0.1.0.0
-
-## Support
-
-For issues and feature requests, please create an issue in the repository.
-
----
-
-**Note**: This plugin requires valid AWS credentials with appropriate permissions to function correctly. Make sure your AWS credentials have the necessary permissions to access CodePipeline resources. 
+MIT
