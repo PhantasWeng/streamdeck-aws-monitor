@@ -126,7 +126,7 @@
         pipelineRegion: pipelineRegionSelect.value || '',
         logGroupName: logGroupNameField.value?.trim() || '',
         logRegion: logRegionSelect.value || '',
-        pollingMaxMinutes: pollingMaxMinutesField.value?.trim() || '30'
+        pollingMaxMinutes: String(pollingMaxMinutesField.value ?? '').trim() || '30'
       });
 
       const setSaveStatus = (message) => {
