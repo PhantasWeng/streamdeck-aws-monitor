@@ -32,7 +32,7 @@ Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
 
 ## Requirements
 
-- Stream Deck software `6.5+`
+- Stream Deck software `6.9+`
 - Node.js `20`
 - macOS `12+` or Windows `10+`
 - AWS credentials with CodePipeline read access

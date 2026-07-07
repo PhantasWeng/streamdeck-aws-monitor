@@ -496,19 +496,24 @@
     semver "^7.6.3"
     tar "^7.4.3"
 
-"@elgato/schemas@^0.4.1", "@elgato/schemas@^0.4.10":
+"@elgato/schemas@^0.4.1":
   version "0.4.14"
   resolved "https://registry.npmjs.org/@elgato/schemas/-/schemas-0.4.14.tgz"
   integrity sha512-kwfYJ30qAxJW9AMkSSjTEY/VARW+xzuc3tW7CinB7ja+liGHaNUx20CRwLCD9xrbZ/7V1cDolPvNhNWmWvihZg==
 
-"@elgato/streamdeck@^2.0.2":
-  version "2.0.2"
-  resolved "https://registry.npmjs.org/@elgato/streamdeck/-/streamdeck-2.0.2.tgz"
-  integrity sha512-XKY0wEm492geMDdxEC0M7ayxXB6WQHQbnFoJl33cnq0T6QkImSrjLrCPu5jKe0TNo6suY5/0iM1TcREU+6kKQQ==
+"@elgato/schemas@^0.4.14":
+  version "0.4.15"
+  resolved "https://registry.yarnpkg.com/@elgato/schemas/-/schemas-0.4.15.tgz#934156cb43d82d85aa5bb1f702da39833885f1bf"
+  integrity sha512-UpELAqazf52PFer+hqg/hvEhYoPHCH3R0af6P7Ih3Hk6xCCJENn7cA5TIpXAIGEWe6dIteHuo/e/iPGLUP7yXA==
+
+"@elgato/streamdeck@^2.1.0":
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/@elgato/streamdeck/-/streamdeck-2.1.0.tgz#79e3ffd945e3651873c93cf2200fc49db9ce4aa9"
+  integrity sha512-d6wgSe93NbKAW0yT6/rabGCYUWic6nAoQoSLAXVadqTIUVmt+5Tfu7OaIGKnGER6AOn6dOpX6havRLFFFcUmOw==
   dependencies:
-    "@elgato/schemas" "^0.4.10"
-    "@elgato/utils" "^0.4.1"
-    ws "^8.18.0"
+    "@elgato/schemas" "^0.4.14"
+    "@elgato/utils" "^0.4.4"
+    ws "^8.19.0"
 
 "@elgato/utils@^0.1.0":
   version "0.1.0"
@@ -517,10 +522,10 @@
   dependencies:
     zod "^3.25.24"
 
-"@elgato/utils@^0.4.1":
-  version "0.4.2"
-  resolved "https://registry.npmjs.org/@elgato/utils/-/utils-0.4.2.tgz"
-  integrity sha512-zIMMrvTy4OeYYUD9bib7HzoeSfDHKtL1H3cHLXCZLlzov1vk1PMJ5welopaSr5n6H7VOrDkPQFR+893vYQJa1g==
+"@elgato/utils@^0.4.4":
+  version "0.4.5"
+  resolved "https://registry.yarnpkg.com/@elgato/utils/-/utils-0.4.5.tgz#ffd15295398a891f9c023e2ecffd39b617686e4b"
+  integrity sha512-kBoqM8LEhhVLv7lNftYqaecNna3T/L85QQWU56yR1iFCvqlyyD22WmBljRcQkw5ZNvib55Br3cnrsxX3ajp+dQ==
   dependencies:
     zod "^3.25.24"
 
@@ -2749,10 +2754,10 @@ wrappy@1:
   resolved "https://registry.npmjs.org/wrappy/-/wrappy-1.0.2.tgz"
   integrity sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==
 
-ws@^8.18.0:
-  version "8.18.3"
-  resolved "https://registry.npmjs.org/ws/-/ws-8.18.3.tgz"
-  integrity sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==
+ws@^8.19.0:
+  version "8.21.0"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-8.21.0.tgz#012e413fc07429945121b0c153158c4343086951"
+  integrity sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==
 
 yallist@^5.0.0:
   version "5.0.0"
