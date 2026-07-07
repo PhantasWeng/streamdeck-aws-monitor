@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # canvas 為原生模組，安裝時可能需要從原始碼編譯，先備妥系統相依
       - name: Install canvas build dependencies
@@ -31,7 +31,7 @@ jobs:
             librsvg2-dev
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: yarn
