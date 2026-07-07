@@ -1,12 +1,18 @@
 {
     "scripts": {
         "build": "node scripts/build.mjs",
-        "build:bundle": "rollup -c",
+        "clean": "rm -rf com.phantas-weng.aws-monitor.sdPlugin/bin",
+        "build:bundle": "yarn clean && rollup -c",
         "screenshots:key-states": "node scripts/generate-readme-key-states.mjs",
-        "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.phantas-weng.aws-monitor\""
+        "watch": "yarn clean && rollup -c -w --watch.onEnd=\"open -g 'streamdeck://plugins/restart/com.phantas-weng.aws-monitor'\"",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "lint": "biome check .",
+        "lint:fix": "biome check --write ."
     },
     "type": "module",
     "devDependencies": {
+        "@biomejs/biome": "^2.0.0",
         "@elgato/cli": "^1.5.0",
         "@rollup/plugin-commonjs": "^28.0.0",
         "@rollup/plugin-json": "^6.1.0",
@@ -17,14 +23,13 @@
         "@types/node": "~20.15.0",
         "rollup": "^4.0.2",
         "tslib": "^2.6.2",
-        "typescript": "^5.2.2"
+        "typescript": "^5.2.2",
+        "vitest": "^3.0.0"
     },
     "dependencies": {
         "@aws-sdk/client-codepipeline": "^3.858.0",
-        "@aws-sdk/credential-providers": "^3.858.0",
         "@elgato/streamdeck": "^2.0.2",
         "@elgato/utils": "^0.1.0",
-        "canvas": "^3.1.2",
-        "dayjs": "^1.11.13"
+        "canvas": "^3.1.2"
     }
 }

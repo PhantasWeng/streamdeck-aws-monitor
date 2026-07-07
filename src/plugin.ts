@@ -2,10 +2,11 @@ import streamDeck from "@elgato/streamdeck";
 
 import { CodePipelineMonitor } from "./actions/codepipeline";
 
-// We can enable "trace" logging so that all messages between the Stream Deck, and the plugin are recorded. When storing sensitive information
-streamDeck.logger.setLevel("debug"); // "trace"
+// 正式環境使用 info，避免 log 檔隨長時間 polling 膨脹；
+// 開發時可暫時改為 "debug" 或 "trace" 查看完整事件
+streamDeck.logger.setLevel("info");
 
-// Register the increment action.
+// Register the CodePipeline monitor action.
 streamDeck.actions.registerAction(new CodePipelineMonitor());
 
 // Finally, connect to the Stream Deck.

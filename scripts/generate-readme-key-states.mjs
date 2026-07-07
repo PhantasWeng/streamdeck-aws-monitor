@@ -1,5 +1,4 @@
 import { createCanvas, loadImage } from "canvas";
-import dayjs from "dayjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +35,11 @@ const TITLE_Y = 12;
 const STATUS_ICON_Y = 50;
 
 const iconImageCache = new Map();
+
+const formatTime = () => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+};
 
 const createIconSvg = (paths, color) => {
   const pathElements = paths
@@ -133,7 +137,7 @@ const drawFooter = async (ctx, isAllSucceeded, isRefreshing, loadingAngleDeg) =>
   ctx.fillStyle = "white";
   ctx.font = "22px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(dayjs().format("HH:mm"), 52, 110);
+  ctx.fillText(formatTime(), 52, 110);
   if (isAllSucceeded) {
     await drawIcon(ctx, ICON_CHECK, "#4ade80", 96, 108, 22);
   } else if (isRefreshing) {

@@ -4,7 +4,8 @@
 <head lang="en">
   <title>CodePipeline Settings</title>
   <meta charset="utf-8" />
-  <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+  <!-- 已 vendor 至本地，避免離線或 CDN 失效時設定頁面無法使用 -->
+  <script src="libs/sdpi-components.js"></script>
   <script>
     const { streamDeckClient } = SDPIComponents;
 
@@ -163,7 +164,7 @@
     <sdpi-textfield id="AWS_ACCESS_KEY_ID" required></sdpi-textfield>
   </sdpi-item>
   <sdpi-item label="Secret Access Key">
-    <sdpi-textfield id="AWS_SECRET_ACCESS_KEY" required></sdpi-textfield>
+    <sdpi-password id="AWS_SECRET_ACCESS_KEY" required></sdpi-password>
   </sdpi-item>
 
   <sdpi-item label="Pipeline Name">
@@ -176,8 +177,9 @@
   <sdpi-item label="Log Group Name">
     <sdpi-textfield id="logGroupName" placeholder="(optional, for double-click)"></sdpi-textfield>
   </sdpi-item>
+  <!-- 選填：未設定時沿用 Pipeline Region -->
   <sdpi-item label="Log Group Region">
-    <sdpi-select id="logRegion" required></sdpi-select>
+    <sdpi-select id="logRegion"></sdpi-select>
   </sdpi-item>
   <sdpi-item label="Polling Max (minutes)">
     <sdpi-textfield id="pollingMaxMinutes" type="number" min="1" placeholder="30"></sdpi-textfield>

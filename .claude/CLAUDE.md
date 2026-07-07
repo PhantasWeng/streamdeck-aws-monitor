@@ -6,12 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 yarn build              # Production build: bundles + prompts for version + packs .streamDeckPlugin + creates git tag
-yarn build:bundle       # Rollup bundle only (no packaging/versioning)
+yarn build:bundle       # Clean + Rollup bundle only (no packaging/versioning)
 yarn watch              # Development mode with auto-rebuild and plugin restart
+yarn test               # Run vitest test suite (tests/)
+yarn lint               # Biome lint check
+yarn lint:fix           # Biome lint with auto-fix
 yarn screenshots:key-states  # Generate README screenshots of button key states
 ```
 
 `yarn build` is interactive — it reads the version from `manifest.json`, prompts for the next version, runs `streamdeck pack`, outputs to `releases/`, and tags git.
+
+`yarn clean` removes `bin/` before bundling — Rollup does not clean its output dir, and stale hashed chunks would otherwise get packed into the plugin.
+
+`yarn watch` restarts the plugin via the `streamdeck://plugins/restart/<uuid>` deep link (`open -g`) instead of `streamdeck restart` — the CLI's process check (find-process) crashes with ERR_CHILD_PROCESS_STDIO_MAXBUFFER when `ps ax -ww` output exceeds its hardcoded 2MB buffer, which happens on this machine (~4MB).
 
 ## Development Setup
 
@@ -31,19 +38,24 @@ yarn screenshots:key-states  # Generate README screenshots of button key states
 
 This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
-**Tech Stack**: TypeScript, Elgato Stream Deck SDK v2.0.2, AWS SDK v3, node-canvas, Rollup
+**Tech Stack**: TypeScript, Elgato Stream Deck SDK v2.0.2, AWS SDK v3, node-canvas, Rollup, Vitest, Biome
 
-**Entry Point**: `src/plugin.ts` — registers the `CodePipelineMonitor` action and connects to Stream Deck.
+**Entry Point**: `src/plugin.ts` — registers the `CodePipelineMonitor` action and connects to Stream Deck. Logger level is `info` in production; bump to `debug`/`trace` temporarily when debugging.
 
-**Action Pattern**: Uses `SingletonAction` from Stream Deck SDK. Each action handles Stream Deck events (`onWillAppear`, `onKeyDown`, `onKeyUp`, `onWillDisappear`, `onDidReceiveSettings`).
+**Source Modules** (`src/`):
+- `actions/codepipeline.ts` — `CodePipelineMonitor` action class + polling orchestration (`startMonitoring` / `pollOnce`). Debug mode and real mode share the same polling/render flow via an injected `StatusFetcher`.
+- `settings.ts` — settings type, normalization, validation, URL builders (pure functions, unit-tested)
+- `button-state.ts` — per-button `ButtonState` in a single `Map<actionId, ButtonState>` (timers, loading animation, cached AWS client). `disposeButtonState()` cleans everything at once on `onWillDisappear`.
+- `transitions.ts` — stage-status-change tracking with brief "TransitionLoading" overlay (300ms), unit-tested
+- `rendering.ts` — node-canvas drawing (144×144, SVG icons from Iconify line-md) + full-frame data-URL cache
+- `aws.ts` — CodePipeline client (cached per button, credentials passed directly — never via `process.env`) and stage-status fetch
+- `debug.ts` — simulated 3-stage pipeline fetcher for debug mode
 
-**Main Action**: `src/actions/codepipeline.ts` — `CodePipelineMonitor`
-- Polls AWS CodePipeline every 60 seconds while any stage is in progress
-- Auto-stops polling when all stages succeed or when `pollingMaxMinutes` (default 30) is exceeded (shows terminated state)
-- Renders dynamic 144×144px button images using node-canvas with SVG icons (Iconify line-md paths)
-- All per-button state is tracked in module-level Maps keyed by `action.id` to support multiple buttons
+**Action Pattern**: Uses `SingletonAction` from Stream Deck SDK. Handles `onWillAppear`, `onKeyDown`, `onKeyUp`, `onWillDisappear`, `onDidReceiveSettings`.
 
-**UI/Settings**: `com.phantas-weng.aws-monitor.sdPlugin/ui/codepipeline.html` — Property inspector for AWS credentials and pipeline settings
+**Polling behavior**: Polls AWS CodePipeline every 60 seconds while any stage is in progress. Auto-stops when all stages succeed or when `pollingMaxMinutes` (default 30) is exceeded (shows terminated state). Transient fetch errors do NOT stop polling — retries continue within the polling window.
+
+**UI/Settings**: `com.phantas-weng.aws-monitor.sdPlugin/ui/codepipeline.html` — Property inspector for AWS credentials and pipeline settings. `sdpi-components.js` is vendored locally in `ui/libs/` (no CDN dependency).
 
 **Manifest**: `com.phantas-weng.aws-monitor.sdPlugin/manifest.json` — Plugin version, action UUIDs, Node.js 20 runtime config
 
@@ -53,17 +65,14 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Canvas rendering**: `canvas` is marked `external` in `rollup.config.mjs` because the Stream Deck Node.js runtime provides it. All button images are drawn via `createCanvas(144, 144)` and sent as base64 data URLs via `ev.action.setImage()`.
 
-**State maps** (all keyed by `action.id`):
-- `refreshTimers` — 60s polling intervals
-- `pressTimers` — long-press detection timeouts
-- `loadingAnimationTimers` / `loadingAngles` / `loadingRenderers` — spinning animation at 10 FPS
-- `stageStatusTransitionUntilMap` — brief "TransitionLoading" overlay (300ms) when a stage status changes
-- `pollingStartedAtMap` — tracks when polling started for the `pollingMaxMinutes` timeout
+**Frame cache**: the loading spinner rotates in 24° steps (15 distinct frames) and the only other time-varying element is the `HH:mm` footer text, so `rendering.ts` caches complete frame data URLs keyed by `(title, statuses, footer, rotation)` and invalidates the cache when the minute changes. This avoids re-drawing/PNG-encoding at 10 FPS.
 
 **Button interactions**: short press → refresh; double-click (within 500ms) → open CloudWatch logs (requires `logGroupName`); long-press (1.3s) → open AWS Console
 
-**Debug mode**: Set `pipelineName` to `debug` in settings — simulates 3-stage pipeline progression without AWS credentials. Useful for UI development.
+**Debug mode**: Set `pipelineName` to `debug` in settings — simulates 3-stage pipeline progression without AWS credentials (see `src/debug.ts`). Useful for UI development.
 
 **Settings normalization**: `normalizeSettings()` runs on every settings change, coalescing the deprecated `region` field into `pipelineRegion`/`logRegion`.
+
+**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`). Rendering/AWS modules are not covered (require canvas / network).
 
 **Code comments**: Written in Traditional Chinese (zh-TW).
