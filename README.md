@@ -23,12 +23,19 @@ Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
 
 - Real-time CodePipeline stage monitoring
 - Visual key rendering with status icons and timestamp footer
+- Optional colored border per key for environment identification (`red` / `orange` / `yellow` / `green` / `blue` / `indigo` / `violet`)
 - Status transition animation (`0.3s` loading transition on state change)
 - Long press (`1.3s`) to open pipeline in AWS Console
 - Double-click to open CloudWatch Log Group (optional)
 - Debug simulation mode (`Pipeline Name = debug`)
 - Configurable polling timeout (`Polling Max (minutes)`)
 - Independent `Pipeline Region` and `Log Group Region`
+
+### Environment Border Colors
+
+Pick a **Border Color** in the Property Inspector to frame the key — handy for telling `stage` / `release` / `production` apart at a glance. Leave it empty for no border.
+
+![Border color options](docs/images/key-states/border-colors.png)
 
 ## Requirements
 
@@ -43,7 +50,7 @@ Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
 git clone https://github.com/PhantasWeng/streamdeck-aws-monitor
 cd streamdeck-aws-monitor
 npm install
-npm build:bundle
+npm run build:bundle
 npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 ```
 
@@ -66,6 +73,7 @@ npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 | `Pipeline Name` | Yes | CodePipeline name; set `debug` to enable simulation mode |
 | `Pipeline Region` | Yes (except debug) | Region for CodePipeline API calls |
 | `Display Name` | No | Custom key title |
+| `Border Color` | No | Environment border color (`red`/`orange`/`yellow`/`green`/`blue`/`indigo`/`violet`); empty for none |
 | `Log Group Name` | No | CloudWatch log group for double-click action |
 | `Log Group Region` | No | Region for CloudWatch log URL; defaults to pipeline region |
 | `Polling Max (minutes)` | No | Polling timeout; default `30` |
@@ -78,7 +86,7 @@ Behavior:
 - Starts with three loading stages
 - Simulates partial and full completion states
 - Uses the same rendering and transition logic as normal mode
-- Stops polling when all succeeded or timeout is reached
+- Uses the same two-speed, never-stopping polling loop as normal mode
 
 ## IAM Permissions
 
@@ -129,25 +137,27 @@ aws-monitor/
 
 ## Release Workflow
 
-Use:
+Versioning is owned by `yarn bump`; packaging is a separate step.
+
+```bash
+yarn bump <major|minor|patch|build|x.y.z.w>   # add --dry-run to preview
+```
+
+`yarn bump`:
+- Computes the next 4-part version (`major.minor.patch.build`) and writes it into `manifest.json`
+- Generates a `CHANGELOG.md` section from commits since the last tag (grouped by Conventional-Commit prefix)
+- Commits and creates an annotated tag `v<version>` (does **not** push)
+
+Push the tag to publish a GitHub Release (packing runs in CI via `.github/workflows/release.yml`):
+
+```bash
+git push && git push origin v<version>
+```
+
+For a local `.streamDeckPlugin` build (packaging only, no versioning/tag):
 
 ```bash
 yarn build
-```
-
-What it does:
-- Runs `build:bundle`
-- Shows current plugin version from `manifest.json`
-- Prompts for next version
-- Packs plugin into `releases/`
-- Creates git tag `v<version>`
-
-Notes:
-- Build stops if tag already exists.
-- Tag push is manual:
-
-```bash
-git push origin <tag>
 ```
 
 ## Screenshot Asset Generation
@@ -162,12 +172,13 @@ This regenerates `docs/images/key-states/*.png`, including `overview.png`.
 
 ## Troubleshooting
 
-- Key stays in `NOT CONFIGURED`:
+- Key stays in `NOT SET`:
   verify required fields are saved.
 - Double-click does nothing:
   check `Log Group Name` and `Log Group Region`.
-- No updates after completion:
-  polling intentionally stops when all stages are `Succeeded`; short-press to refresh.
+- Slow updates after completion:
+  once all stages settle, polling drops to a slower cadence (every `5` minutes) but keeps
+  running to auto-detect the next deployment; short-press to refresh immediately.
 
 ## Contributing
 

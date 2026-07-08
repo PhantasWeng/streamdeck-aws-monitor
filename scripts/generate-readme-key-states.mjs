@@ -11,7 +11,7 @@ const actionKeyIconPath = path.resolve(
   "com.phantas-weng.aws-monitor.sdPlugin/imgs/actions/codepipeline/key@2x.png"
 );
 
-// Keep these definitions aligned with src/actions/codepipeline.ts
+// Keep these definitions aligned with src/rendering.ts
 const ICON_CONFIRM_CIRCLE = [
   { d: "M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z" },
   { d: "M8 12l3 3l5-5" }
@@ -31,8 +31,24 @@ const ICON_CHECK = [{ d: "M5 11l6 6l10-10" }];
 const ICON_ARROW_DOWN = [{ d: "M12 5v12" }, { d: "M7 13l5 5l5-5" }];
 
 const CANVAS_SIZE = 144;
-const TITLE_Y = 12;
-const STATUS_ICON_Y = 50;
+const TITLE_Y = 16;
+const STATUS_ICON_Y = 62;
+const INIT_STATUS_LABEL = "NOT SET";
+
+const BORDER_WIDTH = 6;
+const BORDER_RADIUS = 22;
+const CONTENT_INSET = 12;
+
+// 外框顏色代號 → hex（對齊 src/settings.ts BORDER_COLORS）
+const BORDER_COLORS = {
+  red: "#ef4444",
+  orange: "#fb923c",
+  yellow: "#facc15",
+  green: "#4ade80",
+  blue: "#38bdf8",
+  indigo: "#6366f1",
+  violet: "#d946ef"
+};
 
 const iconImageCache = new Map();
 
@@ -73,7 +89,7 @@ const createButtonCanvas = () => {
 
 const drawTitle = (ctx, title) => {
   ctx.fillStyle = "white";
-  ctx.font = "20px sans-serif bold";
+  ctx.font = "24px sans-serif bold";
   ctx.textAlign = "center";
   ctx.fillText(title, 72, TITLE_Y, 134);
 };
@@ -119,8 +135,8 @@ const getStatusIcon = (status) => {
 const isLoadingStatus = (status) => status !== "Succeeded" && status !== "Failed";
 
 const drawStatusSymbols = async (ctx, statuses, loadingAngleDeg) => {
-  const iconSize = 40;
-  const gap = 4;
+  const iconSize = 32;
+  const gap = 6;
   const totalWidth = statuses.length * iconSize + (statuses.length - 1) * gap;
   let x = (CANVAS_SIZE - totalWidth) / 2;
   const y = STATUS_ICON_Y;
@@ -134,21 +150,53 @@ const drawStatusSymbols = async (ctx, statuses, loadingAngleDeg) => {
 };
 
 const drawFooter = async (ctx, isAllSucceeded, isRefreshing, loadingAngleDeg) => {
+  // 時間靠左、footer 狀態圖示靠右
   ctx.fillStyle = "white";
-  ctx.font = "22px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(formatTime(), 52, 110);
+  ctx.font = "26px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(formatTime(), 8, 116);
   if (isAllSucceeded) {
-    await drawIcon(ctx, ICON_CHECK, "#4ade80", 96, 108, 22);
+    await drawIcon(ctx, ICON_CHECK, "#4ade80", 114, 116, 22);
   } else if (isRefreshing) {
-    await drawBreathingIcon(ctx, ICON_ARROW_DOWN, "white", 96, 108, 22, loadingAngleDeg);
+    await drawBreathingIcon(ctx, ICON_ARROW_DOWN, "white", 114, 116, 22, loadingAngleDeg);
   } else {
-    await drawIcon(ctx, ICON_ARROW_DOWN, "white", 96, 108, 22);
+    await drawIcon(ctx, ICON_ARROW_DOWN, "white", 114, 116, 22);
   }
 };
 
-const renderDebugLikeFrame = async (title, statuses, { isRefreshing = true, loadingAngleDeg = 0 } = {}) => {
+const drawBorder = (ctx, color) => {
+  const offset = BORDER_WIDTH / 2;
+  const x = offset;
+  const y = offset;
+  const w = CANVAS_SIZE - BORDER_WIDTH;
+  const h = CANVAS_SIZE - BORDER_WIDTH;
+  const r = BORDER_RADIUS;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = BORDER_WIDTH;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.stroke();
+};
+
+// 內容一律等比內縮（對齊 src/rendering.ts），框線僅額外疊加
+const renderDebugLikeFrame = async (
+  title,
+  statuses,
+  { isRefreshing = true, loadingAngleDeg = 0, borderColor = null } = {}
+) => {
   const { canvas, ctx } = createButtonCanvas();
+
+  const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+  ctx.save();
+  ctx.translate(CONTENT_INSET, CONTENT_INSET);
+  ctx.scale(scale, scale);
+
   drawTitle(ctx, title);
   await drawStatusSymbols(ctx, statuses, loadingAngleDeg);
   await drawFooter(
@@ -157,18 +205,43 @@ const renderDebugLikeFrame = async (title, statuses, { isRefreshing = true, load
     isRefreshing,
     loadingAngleDeg
   );
+
+  ctx.restore();
+
+  if (borderColor) {
+    drawBorder(ctx, borderColor);
+  }
+
   return canvas.toBuffer("image/png");
 };
 
 const renderNotConfiguredFrame = async (title) => {
   const { canvas, ctx } = createButtonCanvas();
-  drawTitle(ctx, title);
+
+  const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+  ctx.save();
+  ctx.translate(CONTENT_INSET, CONTENT_INSET);
+  ctx.scale(scale, scale);
+
+  // 第一行：logo 縮小置頂
   const iconImg = await loadImage(actionKeyIconPath);
-  ctx.drawImage(iconImg, 36, 37, 72, 72);
-  ctx.fillStyle = "#f59e0b";
-  ctx.font = "15px sans-serif bold";
+  const logoSize = 40;
+  ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, TITLE_Y - 4, logoSize, logoSize);
+
+  // 第二行：標題
+  ctx.fillStyle = "white";
+  ctx.font = "22px sans-serif bold";
   ctx.textAlign = "center";
-  ctx.fillText("NOT CONFIGURED", 72, 110, 132);
+  ctx.fillText(title, 72, 67, 134);
+
+  // 第三行：未設定狀態文字
+  ctx.fillStyle = "#f59e0b";
+  ctx.font = "20px sans-serif bold";
+  ctx.textAlign = "center";
+  ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
+
+  ctx.restore();
+
   return canvas.toBuffer("image/png");
 };
 
@@ -201,76 +274,125 @@ const strokeRoundedRect = (ctx, x, y, width, height, radius) => {
   ctx.stroke();
 };
 
-const buildOverview = async () => {
-  const cardW = 1140;
-  const cardH = 390;
-  const canvas = createCanvas(cardW, cardH);
-  const ctx = canvas.getContext("2d");
-
-  // Panel background
+// 繪製面板背景（圓角漸層 + 頂部光澤 + 邊框）
+const drawPanel = (ctx, cardW, cardH) => {
   const panelGradient = ctx.createLinearGradient(0, 0, 0, cardH);
   panelGradient.addColorStop(0, "#202127");
   panelGradient.addColorStop(1, "#12131a");
   ctx.fillStyle = panelGradient;
   drawRoundedRect(ctx, 0, 0, cardW, cardH, 24);
 
-  // Top gloss
   const glossGradient = ctx.createLinearGradient(0, 0, 0, cardH * 0.45);
   glossGradient.addColorStop(0, "rgba(255,255,255,0.12)");
   glossGradient.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = glossGradient;
   drawRoundedRect(ctx, 0, 0, cardW, cardH * 0.45, 24);
 
-  // Panel border
   ctx.strokeStyle = "rgba(255,255,255,0.16)";
   ctx.lineWidth = 2;
   strokeRoundedRect(ctx, 1, 1, cardW - 2, cardH - 2, 23);
+};
 
-  const labels = ["Not Configured", "Loading", "Partially Complete", "Fully Complete"];
-  const files = ["not-configured.png", "loading.png", "partial-checked.png", "all-checked.png"];
+// 繪製單顆按鈕外殼並置入已渲染的按鈕圖
+const drawKeyInShell = async (ctx, file, x, shellY, slotW, slotH, imageInset) => {
+  const imageW = slotW - imageInset * 2;
+  const imageH = imageW;
+
+  const shellGradient = ctx.createLinearGradient(0, shellY, 0, shellY + slotH);
+  shellGradient.addColorStop(0, "#101116");
+  shellGradient.addColorStop(1, "#05060a");
+  ctx.fillStyle = shellGradient;
+  drawRoundedRect(ctx, x, shellY, slotW, slotH, 24);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 2;
+  strokeRoundedRect(ctx, x + 1, shellY + 1, slotW - 2, slotH - 2, 22);
+  ctx.strokeStyle = "rgba(0,0,0,0.92)";
+  ctx.lineWidth = 2;
+  strokeRoundedRect(ctx, x + 3, shellY + 3, slotW - 6, slotH - 6, 20);
+
+  const img = await loadImage(file);
+  ctx.drawImage(img, x + imageInset, shellY + imageInset, imageW, imageH);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1.5;
+  strokeRoundedRect(ctx, x + imageInset + 0.75, shellY + imageInset + 0.75, imageW - 1.5, imageH - 1.5, 15);
+};
+
+const buildOverview = async () => {
   const startX = 28;
   const gap = 20;
   const slotW = 261;
-  const slotH = 300;
+  const slotH = 248;
   const imageInset = 13;
-  const imageW = slotW - imageInset * 2;
-  const imageH = imageW;
   const topY = 28;
+  const labelToKeyGap = 48;
+  const cardW = startX * 2 + slotW * 4 + gap * 3;
+  const cardH = topY + labelToKeyGap + slotH + 24;
+  const canvas = createCanvas(cardW, cardH);
+  const ctx = canvas.getContext("2d");
+  drawPanel(ctx, cardW, cardH);
+
+  const labels = ["Not Configured", "Loading", "Partially Complete", "Fully Complete"];
+  const files = ["not-configured.png", "loading.png", "partial-checked.png", "all-checked.png"];
 
   for (let i = 0; i < 4; i += 1) {
     const x = startX + i * (slotW + gap);
-    const y = topY;
 
-    // label
     ctx.fillStyle = "#dadce5";
     ctx.textAlign = "center";
     ctx.font = "600 32px sans-serif";
-    ctx.fillText(labels[i], x + slotW / 2, y + 4);
+    ctx.fillText(labels[i], x + slotW / 2, topY + 4);
 
-    // key shell
-    const shellY = y + 48;
-    const shellGradient = ctx.createLinearGradient(0, shellY, 0, shellY + slotH - 52);
-    shellGradient.addColorStop(0, "#101116");
-    shellGradient.addColorStop(1, "#05060a");
-    ctx.fillStyle = shellGradient;
-    drawRoundedRect(ctx, x, shellY, slotW, slotH - 52, 24);
+    await drawKeyInShell(ctx, path.resolve(outputDir, files[i]), x, topY + labelToKeyGap, slotW, slotH, imageInset);
+  }
 
-    // shell edge
-    ctx.strokeStyle = "rgba(255,255,255,0.18)";
-    ctx.lineWidth = 2;
-    strokeRoundedRect(ctx, x + 1, shellY + 1, slotW - 2, slotH - 54, 22);
-    ctx.strokeStyle = "rgba(0,0,0,0.92)";
-    ctx.lineWidth = 2;
-    strokeRoundedRect(ctx, x + 3, shellY + 3, slotW - 6, slotH - 58, 20);
+  return canvas.toBuffer("image/png");
+};
 
-    // image
-    const img = await loadImage(path.resolve(outputDir, files[i]));
-    ctx.drawImage(img, x + imageInset, shellY + imageInset, imageW, imageH);
+// 外框顏色示意：7 色各一顆按鈕，並各自呈現不同 pipeline 狀態
+const buildBorderColors = async () => {
+  const entries = Object.entries(BORDER_COLORS);
+  // 每顆搭配不同狀態，同時展示外框顏色與狀態渲染
+  const states = [
+    { title: "Prod", statuses: ["Succeeded", "Succeeded", "Succeeded"], isRefreshing: false },
+    { title: "Build", statuses: ["Succeeded", "InProgress", "InProgress"], isRefreshing: true },
+    { title: "Stage", statuses: ["Succeeded", "Succeeded", "Failed"], isRefreshing: true },
+    { title: "Deploy", statuses: ["InProgress", "InProgress", "InProgress"], isRefreshing: true },
+    { title: "Release", statuses: ["Succeeded", "Succeeded", "Succeeded"], isRefreshing: false },
+    { title: "Sandbox", statuses: ["Succeeded", "Failed", "InProgress"], isRefreshing: true },
+    { title: "Test", statuses: ["Succeeded", "Succeeded", "InProgress"], isRefreshing: true }
+  ];
+  const startX = 24;
+  const gap = 16;
+  const slotW = 150;
+  const imageInset = 10;
+  const topY = 24;
+  const labelH = 40;
+  const slotH = slotW;
+  const cardW = startX * 2 + entries.length * slotW + (entries.length - 1) * gap;
+  const cardH = topY + slotH + labelH + 20;
 
-    // image glass border
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.lineWidth = 1.5;
-    strokeRoundedRect(ctx, x + imageInset + 0.75, shellY + imageInset + 0.75, imageW - 1.5, imageH - 1.5, 15);
+  const canvas = createCanvas(cardW, cardH);
+  const ctx = canvas.getContext("2d");
+  drawPanel(ctx, cardW, cardH);
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const [name, hex] = entries[i];
+    const state = states[i % states.length];
+    const x = startX + i * (slotW + gap);
+    const frame = await renderDebugLikeFrame(state.title, state.statuses, {
+      isRefreshing: state.isRefreshing,
+      borderColor: hex
+    });
+    const framePath = path.resolve(outputDir, `border-${name}.png`);
+    writeFileSync(framePath, frame);
+    await drawKeyInShell(ctx, framePath, x, topY, slotW, slotH, imageInset);
+
+    ctx.fillStyle = "#dadce5";
+    ctx.textAlign = "center";
+    ctx.font = "600 22px sans-serif";
+    ctx.fillText(name, x + slotW / 2, topY + slotH + 12);
   }
 
   return canvas.toBuffer("image/png");
@@ -303,8 +425,9 @@ const main = async () => {
     })
   );
 
-  writePng("not-configured.png", await renderNotConfiguredFrame("AWS CodePipeline"));
+  writePng("not-configured.png", await renderNotConfiguredFrame("CodePipeline"));
   writePng("overview.png", await buildOverview());
+  writePng("border-colors.png", await buildBorderColors());
 };
 
 await main();

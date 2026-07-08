@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0.0] - 2026-07-08
+
+### Features
+
+- add configurable button border color and refine button layout (aa77971)
+
 ## [1.1.0.0] - 2026-07-08
 
 ### Features
