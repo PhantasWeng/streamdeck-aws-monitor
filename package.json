@@ -1,6 +1,7 @@
 {
     "scripts": {
         "build": "node scripts/build.mjs",
+        "bump": "node scripts/bump.mjs",
         "clean": "rm -rf com.phantas-weng.aws-monitor.sdPlugin/bin",
         "build:bundle": "yarn clean && rollup -c",
         "screenshots:key-states": "node scripts/generate-readme-key-states.mjs",

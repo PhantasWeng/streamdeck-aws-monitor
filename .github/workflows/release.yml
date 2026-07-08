@@ -47,6 +47,17 @@ jobs:
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      # 從 CHANGELOG.md 抽出該版本區塊作為 Release note；抽不到則留空由後續 fallback 處理
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          node scripts/extract-notes.mjs "${{ steps.version.outputs.value }}" > release-notes.md || true
+          if [ -s release-notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build bundle
         run: yarn build:bundle
 
@@ -61,13 +72,24 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_FOUND: ${{ steps.notes.outputs.found }}
         run: |
+          # note 來源：優先用 CHANGELOG 抽出的區塊（--notes-file），抽不到才 fallback 到 GitHub 自動生成
+          if [ "$NOTES_FOUND" = "true" ]; then
+            NOTES_ARGS=(--notes-file release-notes.md)
+          else
+            NOTES_ARGS=(--generate-notes)
+          fi
+
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            # Release 已存在（例如重跑）→ 覆蓋 asset
+            # Release 已存在（例如重跑）→ 覆蓋 asset 並更新 note
             gh release upload "$GITHUB_REF_NAME" dist/*.streamDeckPlugin --clobber
+            if [ "$NOTES_FOUND" = "true" ]; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file release-notes.md
+            fi
           else
             gh release create "$GITHUB_REF_NAME" \
               dist/*.streamDeckPlugin \
               --title "$GITHUB_REF_NAME" \
-              --generate-notes
+              "${NOTES_ARGS[@]}"
           fi

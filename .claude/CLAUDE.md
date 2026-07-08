@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-yarn build              # Production build: bundles + prompts for version + packs .streamDeckPlugin + creates git tag
+yarn bump [major|minor|patch|build|x.y.z.w]  # Bump version + generate CHANGELOG note + commit + tag (no push). Add --dry-run to preview.
+yarn build              # Local packaging: bundles + packs .streamDeckPlugin from manifest version → releases/ (no versioning/tag)
 yarn build:bundle       # Clean + Rollup bundle only (no packaging/versioning)
 yarn watch              # Development mode with auto-rebuild and plugin restart
 yarn test               # Run vitest test suite (tests/)
@@ -14,7 +15,7 @@ yarn lint:fix           # Biome lint with auto-fix
 yarn screenshots:key-states  # Generate README screenshots of button key states
 ```
 
-`yarn build` is interactive — it reads the version from `manifest.json`, prompts for the next version, runs `streamdeck pack`, outputs to `releases/`, and tags git.
+**Release flow**: `yarn bump <level>` owns versioning — it computes the next 4-part version (`major.minor.patch.build`), writes it into `manifest.json`, generates a `CHANGELOG.md` section from `git log <last v* tag>..HEAD` grouped by Conventional-Commit prefix, commits, and creates an annotated tag `vX` (does NOT push). Pushing the tag triggers `.github/workflows/release.yml`, which packs and publishes a GitHub Release whose notes come from the CHANGELOG section for that version (`scripts/extract-notes.mjs` → `gh release --notes-file`; falls back to `--generate-notes` if absent). `yarn build` is now packaging-only (reads the current `manifest.json` version, no prompt, no tag) for local `.streamDeckPlugin` builds. Pure release helpers live in `scripts/release-lib.mjs` (unit-tested in `tests/release-lib.test.ts`).
 
 `yarn clean` removes `bin/` before bundling — Rollup does not clean its output dir, and stale hashed chunks would otherwise get packed into the plugin.
 

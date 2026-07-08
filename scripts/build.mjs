@@ -1,8 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -23,50 +21,17 @@ const run = (command, args) => {
   }
 };
 
-const runCapture = (command, args) => {
-  const result = spawnSync(command, args, {
-    cwd: rootDir,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-    shell: false
-  });
-
-  return result;
-};
-
 const readCurrentPluginVersion = () => {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   return manifest.Version;
 };
 
-const askNextVersion = async (currentVersion) => {
-  if (!input.isTTY || !output.isTTY) {
-    console.error("Build requires an interactive terminal to input the next version.");
-    process.exit(1);
-  }
-
-  const rl = createInterface({ input, output });
-
-  try {
-    console.log(`Current plugin version: ${currentVersion}`);
-    const nextVersion = (await rl.question("What should the next version be? ")).trim();
-
-    if (!nextVersion) {
-      console.error("Version cannot be empty.");
-      process.exit(1);
-    }
-
-    return nextVersion;
-  } finally {
-    rl.close();
-  }
-};
-
+// 本地打包：讀 manifest.json 現有版本，打包成 .streamDeckPlugin 供本地安裝/測試。
+// 版本、CHANGELOG、git tag 一律由 `yarn bump` 負責，正式 release 由 CI（tag push）處理。
 const main = async () => {
   run("yarn", ["build:bundle"]);
 
-  const currentVersion = readCurrentPluginVersion();
-  const nextVersion = await askNextVersion(currentVersion);
+  const version = readCurrentPluginVersion();
 
   if (!existsSync(releaseDir)) {
     mkdirSync(releaseDir, { recursive: true });
@@ -76,26 +41,13 @@ const main = async () => {
     "pack",
     pluginPath,
     "--version",
-    nextVersion,
+    version,
     "-o",
     releaseDir,
     "-f"
   ]);
 
-  const tagName = `v${nextVersion}`;
-  const tagCheck = runCapture("git", ["tag", "--list", tagName]);
-  if (tagCheck.status !== 0) {
-    console.error("Failed to check existing git tags.");
-    process.exit(tagCheck.status ?? 1);
-  }
-
-  if (tagCheck.stdout.trim() === tagName) {
-    console.error(`Git tag already exists: ${tagName}`);
-    process.exit(1);
-  }
-
-  run("git", ["tag", tagName]);
-  console.log(`Created git tag: ${tagName}`);
+  console.log(`Packed plugin v${version} → ${releaseDir}`);
 };
 
 await main();
