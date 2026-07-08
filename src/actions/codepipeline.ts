@@ -15,6 +15,7 @@ import { renderFrame, renderInitFrame } from "../rendering";
 import {
 	type CodePipelineMonitorSettings,
 	getAwsConsoleUrl,
+	getBorderColorHex,
 	getButtonTitle,
 	getCloudWatchLogGroupUrl,
 	getPollingMaxMinutes,
@@ -211,6 +212,7 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 				statuses: displayStatuses,
 				footer: deriveFooter(displayStatuses, isTerminated),
 				rotationDeg: state.loadingAngle ?? 0,
+				borderColor: getBorderColorHex(settings),
 			}));
 		};
 

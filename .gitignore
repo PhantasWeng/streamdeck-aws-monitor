@@ -7,6 +7,7 @@ node_modules/
 # Stream Deck files
 *.sdPlugin/bin
 *.sdPlugin/logs
+logs/
 
 # Packaged plugin build artifacts (distributed via GitHub Releases)
 *.streamDeckPlugin

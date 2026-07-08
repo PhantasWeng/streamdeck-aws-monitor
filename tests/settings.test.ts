@@ -3,6 +3,7 @@ import {
 	type CodePipelineMonitorSettings,
 	DEFAULT_POLLING_MAX_MINUTES,
 	getAwsConsoleUrl,
+	getBorderColorHex,
 	getButtonTitle,
 	getCloudWatchLogGroupUrl,
 	getLogRegion,
@@ -93,7 +94,29 @@ describe('getButtonTitle', () => {
 	it('優先使用 displayName，其次 pipelineName，最後為預設值', () => {
 		expect(getButtonTitle({ ...baseSettings, displayName: 'Prod' })).toBe('Prod');
 		expect(getButtonTitle(baseSettings)).toBe('my-pipeline');
-		expect(getButtonTitle({ ...baseSettings, pipelineName: '' })).toBe('AWS CodePipeline');
+		expect(getButtonTitle({ ...baseSettings, pipelineName: '' })).toBe('CodePipeline');
+	});
+});
+
+describe('getBorderColorHex', () => {
+	it('各顏色代號對應到 hex', () => {
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'red' })).toBe('#ef4444');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'orange' })).toBe('#fb923c');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'yellow' })).toBe('#facc15');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'green' })).toBe('#4ade80');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'blue' })).toBe('#38bdf8');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'indigo' })).toBe('#6366f1');
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'violet' })).toBe('#d946ef');
+	});
+
+	it('大小寫與前後空白不影響對應', () => {
+		expect(getBorderColorHex({ ...baseSettings, borderColor: '  RED ' })).toBe('#ef4444');
+	});
+
+	it('未選或未知代號回傳 null', () => {
+		expect(getBorderColorHex(baseSettings)).toBeNull();
+		expect(getBorderColorHex({ ...baseSettings, borderColor: '' })).toBeNull();
+		expect(getBorderColorHex({ ...baseSettings, borderColor: 'rainbow' })).toBeNull();
 	});
 });
 

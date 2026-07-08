@@ -78,6 +78,7 @@
       const saveButton = document.getElementById('saveButton');
       const saveStatus = document.getElementById('saveStatus');
       const displayNameField = document.getElementById('displayName');
+      const borderColorField = document.getElementById('borderColor');
       const accessKeyField = document.getElementById('AWS_ACCESS_KEY_ID');
       const secretKeyField = document.getElementById('AWS_SECRET_ACCESS_KEY');
       const pipelineNameField = document.getElementById('pipelineName');
@@ -110,6 +111,7 @@
       const hydrateForm = (settings) => {
         if (!settings) return;
         setFieldValue(displayNameField, settings.displayName);
+        setFieldValue(borderColorField, settings.borderColor);
         setFieldValue(accessKeyField, settings.AWS_ACCESS_KEY_ID);
         setFieldValue(secretKeyField, settings.AWS_SECRET_ACCESS_KEY);
         setFieldValue(pipelineNameField, settings.pipelineName);
@@ -121,6 +123,7 @@
 
       const collectFormSettings = () => ({
         displayName: displayNameField.value?.trim() || '',
+        borderColor: borderColorField.value || '',
         AWS_ACCESS_KEY_ID: accessKeyField.value?.trim() || '',
         AWS_SECRET_ACCESS_KEY: secretKeyField.value?.trim() || '',
         pipelineName: pipelineNameField.value?.trim() || '',
@@ -158,6 +161,18 @@
 <body>
   <sdpi-item label="Display Name">
     <sdpi-textfield id="displayName"></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Border Color">
+    <sdpi-select id="borderColor">
+      <option value="">(none)</option>
+      <option value="red">Red</option>
+      <option value="orange">Orange</option>
+      <option value="yellow">Yellow</option>
+      <option value="green">Green</option>
+      <option value="blue">Blue</option>
+      <option value="indigo">Indigo</option>
+      <option value="violet">Violet</option>
+    </sdpi-select>
   </sdpi-item>
 
   <sdpi-item label="Access Key ID">

@@ -39,8 +39,11 @@ const ICON_MENU_TO_CLOSE_TRANSITION: IconPathDef[] = [
 ];
 
 const CANVAS_SIZE = 144;
-const TITLE_Y = 12;
-const STATUS_ICON_Y = 50;
+// 未設定畫面底部狀態文字（簡短）
+const INIT_STATUS_LABEL = 'NOT SET';
+const TITLE_Y = 16;
+// 狀態 icon 略低於水平中線，與加大的標題做視覺平衡
+const STATUS_ICON_Y = 62;
 
 const iconImageCache = new Map<string, Promise<Image>>();
 const actionKeyIconPath = path.resolve(
@@ -72,7 +75,7 @@ const createButtonCanvas = (): { canvas: Canvas; ctx: CanvasRenderingContext2D }
  */
 const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
 	ctx.fillStyle = 'white';
-	ctx.font = '20px sans-serif bold';
+	ctx.font = '24px sans-serif bold';
 	ctx.textAlign = 'center';
 	ctx.fillText(title, 72, TITLE_Y, 134);
 };
@@ -165,8 +168,8 @@ const getStatusIcon = (status: string): { icon: IconPathDef[]; color: string } =
  * 繪製狀態圖示
  */
 const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string[], rotationDeg: number): Promise<void> => {
-	const iconSize = 40;
-	const gap = 4;
+	const iconSize = 32;
+	const gap = 6;
 	const totalWidth = statuses.length * iconSize + (statuses.length - 1) * gap;
 	let x = (CANVAS_SIZE - totalWidth) / 2;
 	const y = STATUS_ICON_Y;
@@ -183,28 +186,60 @@ export type FrameSpec = {
 	statuses: string[];
 	footer: FrameFooter;
 	rotationDeg: number;
+	borderColor?: string | null; // 可選：外框顏色 hex，null/undefined 表示不畫框
+};
+
+// 外框線寬（貼齊按鈕邊緣，不留保留區）
+const BORDER_WIDTH = 6;
+// 圓角半徑：貼合 Stream Deck 按鈕本身的圓角，避免四角變形
+const BORDER_RADIUS = 22;
+// 有框線時內容整體等比內縮的邊距（讓標題/icon/footer 不壓到框線）
+const CONTENT_INSET = 12;
+
+/**
+ * 繪製環境識別外框（圓角矩形，貼合按鈕圓角）
+ */
+const drawBorder = (ctx: CanvasRenderingContext2D, color: string): void => {
+	const offset = BORDER_WIDTH / 2; // 線寬中心線位置，避免外緣被裁切
+	const x = offset;
+	const y = offset;
+	const w = CANVAS_SIZE - BORDER_WIDTH;
+	const h = CANVAS_SIZE - BORDER_WIDTH;
+	const r = BORDER_RADIUS;
+
+	ctx.strokeStyle = color;
+	ctx.lineWidth = BORDER_WIDTH;
+	ctx.beginPath();
+	ctx.moveTo(x + r, y);
+	ctx.arcTo(x + w, y, x + w, y + h, r);
+	ctx.arcTo(x + w, y + h, x, y + h, r);
+	ctx.arcTo(x, y + h, x, y, r);
+	ctx.arcTo(x, y, x + w, y, r);
+	ctx.closePath();
+	ctx.stroke();
 };
 
 /**
  * 繪製底部時間和狀態指示器
  */
 const drawFooter = async (ctx: CanvasRenderingContext2D, footer: FrameFooter, timeText: string, phaseDeg: number): Promise<void> => {
+	// 時間靠左、footer 狀態圖示靠右，往兩側拉開
 	ctx.fillStyle = 'white';
-	ctx.font = '22px sans-serif';
-	ctx.textAlign = 'center';
-	ctx.fillText(timeText, 52, 110);
+	ctx.font = '26px sans-serif';
+	ctx.textAlign = 'left';
+	ctx.fillText(timeText, 8, 116);
 	switch (footer) {
 		case 'terminated':
-			await drawIcon(ctx, ICON_MENU_TO_CLOSE_TRANSITION, '#f87171', 92, 106, 24);
+			await drawIcon(ctx, ICON_MENU_TO_CLOSE_TRANSITION, '#f87171', 112, 114, 24);
 			break;
 		case 'succeeded':
-			await drawIcon(ctx, ICON_CHECK, '#4ade80', 96, 108, 22);
+			await drawIcon(ctx, ICON_CHECK, '#4ade80', 114, 116, 22);
 			break;
 		case 'refreshing':
-			await drawBreathingIcon(ctx, ICON_ARROW_DOWN, 'white', 96, 108, 22, phaseDeg);
+			await drawBreathingIcon(ctx, ICON_ARROW_DOWN, 'white', 114, 116, 22, phaseDeg);
 			break;
 		default:
-			await drawIcon(ctx, ICON_ARROW_DOWN, 'white', 96, 108, 22);
+			await drawIcon(ctx, ICON_ARROW_DOWN, 'white', 114, 116, 22);
 			break;
 	}
 };
@@ -228,16 +263,30 @@ const getCachedFrame = (key: string): string | undefined => {
  * 繪製 pipeline 狀態畫面，回傳 base64 data URL（有快取）
  */
 export const renderFrame = async (spec: FrameSpec): Promise<string> => {
-	const key = `${spec.title}|${spec.statuses.join(',')}|${spec.footer}|${spec.rotationDeg}`;
+	const key = `${spec.title}|${spec.statuses.join(',')}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}`;
 	const cached = getCachedFrame(key);
 	if (cached) {
 		return cached;
 	}
 
 	const { canvas, ctx } = createButtonCanvas();
+
+	// 內容一律等比內縮，確保有框/無框時的排版與大小比例完全一致；
+	// 框線只是額外疊加，不改變內容尺寸
+	const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+	ctx.save();
+	ctx.translate(CONTENT_INSET, CONTENT_INSET);
+	ctx.scale(scale, scale);
+
 	drawTitle(ctx, spec.title);
 	await drawStatusSymbols(ctx, spec.statuses, spec.rotationDeg);
 	await drawFooter(ctx, spec.footer, frameCacheTime, spec.rotationDeg);
+
+	ctx.restore();
+
+	if (spec.borderColor) {
+		drawBorder(ctx, spec.borderColor);
+	}
 
 	const dataUrl = canvas.toDataURL();
 	frameCache.set(key, dataUrl);
@@ -255,20 +304,35 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 	}
 
 	const { canvas, ctx } = createButtonCanvas();
-	drawTitle(ctx, title);
 
+	// 套用與已設定畫面相同的內縮縮放，讓三行高度與已設定畫面一致
+	const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+	ctx.save();
+	ctx.translate(CONTENT_INSET, CONTENT_INSET);
+	ctx.scale(scale, scale);
+
+	// 第一行（對齊標題行）：logo 縮小置於最上方
 	try {
 		const iconImg = await actionKeyIconPromise;
-		ctx.drawImage(iconImg, 36, 37, 72, 72);
+		const logoSize = 40;
+		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, TITLE_Y - 4, logoSize, logoSize);
 	} catch (error) {
 		streamDeck.logger.error('Failed to load action key icon', error);
 	}
 
-	// High-contrast status text (no badge background)
-	ctx.fillStyle = '#f59e0b';
-	ctx.font = '15px sans-serif bold';
+	// 第二行（對齊中間狀態 icon 行，中心 y=78）：標題
+	ctx.fillStyle = 'white';
+	ctx.font = '22px sans-serif bold';
 	ctx.textAlign = 'center';
-	ctx.fillText('NOT CONFIGURED', 72, 110, 132);
+	ctx.fillText(title, 72, 67, 134);
+
+	// 第三行（對齊底部 footer 行 y=116）：未設定狀態文字（簡短，高對比）
+	ctx.fillStyle = '#f59e0b';
+	ctx.font = '20px sans-serif bold';
+	ctx.textAlign = 'center';
+	ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
+
+	ctx.restore();
 
 	const dataUrl = canvas.toDataURL();
 	frameCache.set(key, dataUrl);

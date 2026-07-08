@@ -11,10 +11,22 @@ export type CodePipelineMonitorSettings = {
 	pipelineName: string;
 	displayName?: string;
 	logGroupName?: string; // 可選：CloudWatch Log Group 名稱
+	borderColor?: string; // 可選：外框顏色代號（red/orange/yellow/green/blue/indigo/violet）
 };
 
 export const DEBUG_PIPELINE_NAME = 'debug';
 export const DEFAULT_POLLING_MAX_MINUTES = 30;
+
+// 外框顏色代號 → hex 對應表（紅橙黃綠藍靛紫）
+export const BORDER_COLORS: Record<string, string> = {
+	red: '#ef4444',
+	orange: '#fb923c',
+	yellow: '#facc15',
+	green: '#4ade80',
+	blue: '#38bdf8',
+	indigo: '#6366f1',
+	violet: '#d946ef',
+};
 
 // 必填欄位
 const REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
@@ -58,7 +70,13 @@ export const normalizeSettings = (settings: CodePipelineMonitorSettings): CodePi
 });
 
 export const getButtonTitle = (settings: CodePipelineMonitorSettings): string =>
-	settings.displayName?.trim() || settings.pipelineName?.trim() || 'AWS CodePipeline';
+	settings.displayName?.trim() || settings.pipelineName?.trim() || 'CodePipeline';
+
+/**
+ * 取得外框顏色 hex；未選或未知代號回傳 null（不畫框）
+ */
+export const getBorderColorHex = (settings: CodePipelineMonitorSettings): string | null =>
+	BORDER_COLORS[settings.borderColor?.trim().toLowerCase() ?? ''] ?? null;
 
 /**
  * 檢查必填設定是否完整（不包含 logGroupName）
