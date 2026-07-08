@@ -6,6 +6,7 @@ import {
 	extractVersionSection,
 	groupCommits,
 	renderChangelogSection,
+	replaceManifestVersion,
 } from '../scripts/release-lib.mjs';
 
 describe('computeNextVersion', () => {
@@ -98,6 +99,33 @@ describe('buildChangelog', () => {
 		const out = buildChangelog(existing, '## [1.1.0.0] - 2026-07-08\n\n- new\n');
 		expect(out.indexOf('## [1.1.0.0]')).toBeLessThan(out.indexOf('## [1.0.0.0]'));
 		expect(out).toContain('intro');
+	});
+});
+
+describe('replaceManifestVersion', () => {
+	const manifest = [
+		'{',
+		'\t"Name": "AWS Monitor",',
+		'\t"Version": "1.1.0.0",',
+		'\t"Nodejs": {',
+		'\t\t"Version": "20"',
+		'\t}',
+		'}',
+		'',
+	].join('\n');
+
+	it('只替換第一個（外掛）Version，不動 Nodejs 的 "20"', () => {
+		const out = replaceManifestVersion(manifest, '1.2.0.0');
+		expect(out).toContain('"Version": "1.2.0.0"');
+		expect(out).toContain('"Version": "20"');
+	});
+
+	it('新版本與現值相同時視為成功（冪等），不拋錯', () => {
+		expect(replaceManifestVersion(manifest, '1.1.0.0')).toBe(manifest);
+	});
+
+	it('找不到 Version 欄位時拋錯', () => {
+		expect(() => replaceManifestVersion('{"Name":"x"}', '1.2.0.0')).toThrow();
 	});
 });
 

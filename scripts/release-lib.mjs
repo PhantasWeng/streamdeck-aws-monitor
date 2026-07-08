@@ -29,6 +29,20 @@ export const computeNextVersion = (current, bump) => {
 	return parts.join('.');
 };
 
+const MANIFEST_VERSION_RE = /("Version":\s*")[^"]*(")/;
+
+/**
+ * 只替換 manifest.json 中第一個（外掛）Version 值，保留其餘格式。
+ * 以 pattern 是否存在判斷成功（而非文字是否改變），故新舊版本相同時仍冪等成功。
+ * 找不到 Version 欄位時拋錯。
+ */
+export const replaceManifestVersion = (text, nextVersion) => {
+	if (!MANIFEST_VERSION_RE.test(text)) {
+		throw new Error("Version field not found in manifest.json");
+	}
+	return text.replace(MANIFEST_VERSION_RE, `$1${nextVersion}$2`);
+};
+
 // conventional commit 前綴 → CHANGELOG 分組
 const TYPE_TO_GROUP = {
 	feat: 'Features',

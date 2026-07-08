@@ -9,6 +9,7 @@ import {
   computeNextVersion,
   groupCommits,
   renderChangelogSection,
+  replaceManifestVersion,
 } from "./release-lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,12 +43,7 @@ const readManifestVersion = () => JSON.parse(readFileSync(manifestPath, "utf8"))
 // 只替換 Version 那一行，保留檔案其餘格式（tab 縮排等）
 const writeManifestVersion = (nextVersion) => {
   const text = readFileSync(manifestPath, "utf8");
-  const replaced = text.replace(/("Version":\s*")[^"]*(")/, `$1${nextVersion}$2`);
-  if (replaced === text) {
-    console.error("Failed to update Version in manifest.json (pattern not found).");
-    process.exit(1);
-  }
-  writeFileSync(manifestPath, replaced);
+  writeFileSync(manifestPath, replaceManifestVersion(text, nextVersion));
 };
 
 const localDate = () => {
