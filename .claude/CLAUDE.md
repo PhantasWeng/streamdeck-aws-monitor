@@ -47,13 +47,14 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 - `settings.ts` — settings type, normalization, validation, URL builders (pure functions, unit-tested)
 - `button-state.ts` — per-button `ButtonState` in a single `Map<actionId, ButtonState>` (timers, loading animation, cached AWS client). `disposeButtonState()` cleans everything at once on `onWillDisappear`.
 - `transitions.ts` — stage-status-change tracking with brief "TransitionLoading" overlay (300ms), unit-tested
+- `polling.ts` — pure poll-cadence logic: `isLoadingStatus`, `classifyPoll` (active/settled/terminated + `pollingStartedAt` bookkeeping), `deriveFooter`, `FrameFooter` type. Unit-tested, no canvas/AWS deps.
 - `rendering.ts` — node-canvas drawing (144×144, SVG icons from Iconify line-md) + full-frame data-URL cache
 - `aws.ts` — CodePipeline client (cached per button, credentials passed directly — never via `process.env`) and stage-status fetch
 - `debug.ts` — simulated 3-stage pipeline fetcher for debug mode
 
 **Action Pattern**: Uses `SingletonAction` from Stream Deck SDK. Handles `onWillAppear`, `onKeyDown`, `onKeyUp`, `onWillDisappear`, `onDidReceiveSettings`.
 
-**Polling behavior**: Polls AWS CodePipeline every 60 seconds while any stage is in progress. Auto-stops when all stages succeed or when `pollingMaxMinutes` (default 30) is exceeded (shows terminated state). Transient fetch errors do NOT stop polling — retries continue within the polling window.
+**Polling behavior**: Two-speed, never-stopping loop (see `src/polling.ts`). Polls every 60 seconds while any stage is in progress (fast); drops to every 5 minutes once settled (all succeeded or contains a failure) so it keeps auto-detecting the next deployment without a manual press. When a settled stage goes back to in-progress it switches straight back to fast polling. `pollingMaxMinutes` (default 30) now caps how long a single in-progress run is *fast-watched*; exceeding it slows to idle polling and shows the terminated footer (it no longer stops the loop). Only `onWillDisappear` (or incomplete settings) stops polling. Transient fetch errors never stop the loop — fast retry within the window, then idle retry.
 
 **UI/Settings**: `com.phantas-weng.aws-monitor.sdPlugin/ui/codepipeline.html` — Property inspector for AWS credentials and pipeline settings. `sdpi-components.js` is vendored locally in `ui/libs/` (no CDN dependency).
 
@@ -73,6 +74,6 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Settings normalization**: `normalizeSettings()` runs on every settings change, coalescing the deprecated `region` field into `pipelineRegion`/`logRegion`.
 
-**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`). Rendering/AWS modules are not covered (require canvas / network).
+**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`, `polling`). Rendering/AWS modules are not covered (require canvas / network).
 
 **Code comments**: Written in Traditional Chinese (zh-TW).

@@ -10,7 +10,8 @@ import {
 	syncLoadingAnimation,
 } from "../button-state";
 import { createDebugFetcher, DEBUG_STEP_INTERVAL } from "../debug";
-import { type FrameFooter, isLoadingStatus, renderFrame, renderInitFrame } from "../rendering";
+import { classifyPoll, deriveFooter, isLoadingStatus } from "../polling";
+import { renderFrame, renderInitFrame } from "../rendering";
 import {
 	type CodePipelineMonitorSettings,
 	getAwsConsoleUrl,
@@ -36,8 +37,12 @@ type ButtonEvent =
 
 // 常數
 const LONG_PRESS_DURATION = 1300;
-const REFRESH_INTERVAL = 60000;
+const FAST_REFRESH_INTERVAL = 60000; // 有 stage 進行中時的快輪間隔
+const IDLE_REFRESH_INTERVAL = 300000; // 落定後的慢輪間隔（5 分鐘），持續偵測新部署
 const DOUBLE_CLICK_THRESHOLD = 500; // 雙擊閾值 (ms)
+
+// 快輪 / 慢輪兩段間隔（debug 與正式模式數值不同）
+type PollIntervals = { fast: number; idle: number };
 
 /**
  * 監控 AWS CodePipeline 部署狀態的按鈕。
@@ -163,19 +168,23 @@ const startMonitoring = (ev: ButtonEvent): void => {
 	state.fetcher = debug
 		? createDebugFetcher()
 		: () => fetchPipelineStatuses(state, settings);
-	void pollOnce(ev, settings, debug ? DEBUG_STEP_INTERVAL : REFRESH_INTERVAL);
+	// debug 模式快輪與慢輪都用短間隔，方便快速觀察快/慢切換
+	const intervals: PollIntervals = debug
+		? { fast: DEBUG_STEP_INTERVAL, idle: DEBUG_STEP_INTERVAL }
+		: { fast: FAST_REFRESH_INTERVAL, idle: IDLE_REFRESH_INTERVAL };
+	void pollOnce(ev, settings, intervals);
 };
 
-const scheduleNextPoll = (ev: ButtonEvent, settings: CodePipelineMonitorSettings, interval: number): void => {
+const scheduleNextPoll = (ev: ButtonEvent, settings: CodePipelineMonitorSettings, intervals: PollIntervals, nextInterval: number): void => {
 	const state = getButtonState(ev.action.id);
 	clearRefreshTimer(state);
 	state.refreshTimer = setTimeout(() => {
 		state.refreshTimer = undefined;
-		void pollOnce(ev, settings, interval);
-	}, interval);
+		void pollOnce(ev, settings, intervals);
+	}, nextInterval);
 };
 
-const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, interval: number): Promise<void> => {
+const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, intervals: PollIntervals): Promise<void> => {
 	const state = getButtonState(ev.action.id);
 	const fetcher = state.fetcher;
 	if (!fetcher) {
@@ -187,52 +196,36 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 	try {
 		const statuses = await fetcher();
 		const hasStatusTransition = registerStageStatusTransitions(state, statuses);
-		const isAllSucceeded = statuses.every(status => status === 'Succeeded');
-		let isTerminated = false;
 
-		if (isAllSucceeded) {
-			state.pollingStartedAt = undefined;
-		} else {
-			state.pollingStartedAt ??= Date.now();
-			if (Date.now() - state.pollingStartedAt >= pollingMaxMs) {
-				isTerminated = true;
-			}
-		}
+		// 依原始 statuses 決定輪詢節奏；classifyPoll 同時維護 pollingStartedAt，
+		// 落定時清除、進行中時起算，讓每個新執行都重享完整快輪視窗
+		const { mode, pollingStartedAt } = classifyPoll(statuses, state.pollingStartedAt, Date.now(), pollingMaxMs);
+		state.pollingStartedAt = pollingStartedAt;
+		const isTerminated = mode === 'terminated';
+		const nextInterval = mode === 'active' ? intervals.fast : intervals.idle;
 
 		const renderCurrent = async (): Promise<void> => {
 			const displayStatuses = getDisplayStatuses(state, statuses);
-			const footer: FrameFooter = isTerminated
-				? 'terminated'
-				: displayStatuses.every(status => status === 'Succeeded')
-					? 'succeeded'
-					: state.refreshTimer
-						? 'refreshing'
-						: 'idle';
 			ev.action.setImage(await renderFrame({
 				title: getButtonTitle(settings),
 				statuses: displayStatuses,
-				footer,
+				footer: deriveFooter(displayStatuses, isTerminated),
 				rotationDeg: state.loadingAngle ?? 0,
 			}));
 		};
 
 		const resyncAnimation = (): void => {
 			const displayStatuses = getDisplayStatuses(state, statuses);
-			const hasLoading = displayStatuses.some(isLoadingStatus);
-			const shouldAnimate = !isTerminated && (hasLoading || state.refreshTimer !== undefined);
+			// 只有實際有進行中（含過場覆蓋）且未 terminated 時才轉動畫，
+			// 慢輪背景偵測時不空跑 10fps
+			const shouldAnimate = !isTerminated && displayStatuses.some(isLoadingStatus);
 			syncLoadingAnimation(state, shouldAnimate, renderCurrent);
 		};
 
-		// MEMO: 如果所有狀態都成功，則停止刷新
-		// 當你上傳新的 code 的時候，要手動先點選按鈕一次
-		if (isAllSucceeded) {
-			clearRefreshTimer(state);
-			streamDeck.logger.debug('All Succeeded, stop refresh');
-		} else if (isTerminated) {
-			clearRefreshTimer(state);
-			streamDeck.logger.debug('Polling exceeded max time, terminated');
-		} else {
-			scheduleNextPoll(ev, settings, interval);
+		// 永不停止：一律排下一輪。有進行中→快輪；落定/terminated→慢輪背景偵測新部署
+		scheduleNextPoll(ev, settings, intervals, nextInterval);
+		if (isTerminated) {
+			streamDeck.logger.debug('Active run exceeded max time, slowing to idle polling');
 		}
 
 		// 繪製按鈕
@@ -245,17 +238,12 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 		}
 	} catch (error) {
 		// 暫時性錯誤（網路中斷、休眠喚醒等）不停止 polling，
-		// 在 polling 視窗內持續重試，超過上限才停止
+		// 在快輪視窗內快速重試，超過後降為慢輪繼續重試（永不完全停止）
 		streamDeck.logger.error('Failed to fetch pipeline state', error);
 		ev.action.showAlert();
 
 		state.pollingStartedAt ??= Date.now();
-		if (Date.now() - state.pollingStartedAt < pollingMaxMs) {
-			scheduleNextPoll(ev, settings, interval);
-		} else {
-			clearRefreshTimer(state);
-			clearLoadingAnimation(state);
-			clearStageStatusTracking(state);
-		}
+		const withinFastWindow = Date.now() - state.pollingStartedAt < pollingMaxMs;
+		scheduleNextPoll(ev, settings, intervals, withinFastWindow ? intervals.fast : intervals.idle);
 	}
 };

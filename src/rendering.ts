@@ -2,6 +2,7 @@ import streamDeck from '@elgato/streamdeck';
 import { createCanvas, type Canvas, type CanvasRenderingContext2D, loadImage, type Image } from 'canvas';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { type FrameFooter, isLoadingStatus } from './polling';
 
 // Iconify line-md icon path definitions（靜態版，移除動畫）
 type IconPathDef = { d: string; opacity?: number };
@@ -47,13 +48,6 @@ const actionKeyIconPath = path.resolve(
 	'../imgs/actions/codepipeline/key@2x.png'
 );
 const actionKeyIconPromise = loadImage(actionKeyIconPath);
-
-/**
- * 判斷是否為 loading 狀態
- */
-export const isLoadingStatus = (status: string): boolean => {
-	return status !== 'Succeeded' && status !== 'Failed';
-};
 
 /**
  * 取得目前時間字串（HH:mm）
@@ -183,8 +177,6 @@ const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string
 		x += iconSize + gap;
 	}
 };
-
-export type FrameFooter = 'succeeded' | 'refreshing' | 'idle' | 'terminated';
 
 export type FrameSpec = {
 	title: string;

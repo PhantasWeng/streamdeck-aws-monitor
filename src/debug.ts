@@ -21,8 +21,12 @@ export const createDebugFetcher = (): StatusFetcher => {
 		if (tick === 2) {
 			return ['Succeeded', 'Succeeded', 'Failed'];
 		}
-		// 之後每次 50% 機率全部成功（全部成功時 polling 會自動停止）
-		const isAllSucceededSample = Math.random() >= 0.5;
-		return ['Succeeded', 'Succeeded', isAllSucceededSample ? 'Succeeded' : 'Failed'];
+		// 之後每次隨機：偶爾重回全部 InProgress（模擬偵測到新部署，
+		// 驗證 settled → active 的自動切回快輪），否則落定為全成功或含失敗
+		const sample = Math.random();
+		if (sample < 0.33) {
+			return Array.from({ length: DEBUG_STAGE_COUNT }, () => 'InProgress');
+		}
+		return ['Succeeded', 'Succeeded', sample >= 0.66 ? 'Succeeded' : 'Failed'];
 	};
 };
