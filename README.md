@@ -1,17 +1,17 @@
 # AWS Monitor for Stream Deck
-[![Stream Deck SDK](https://img.shields.io/badge/Stream%20Deck%20SDK-v2-111827?logo=elgato)](https://docs.elgato.com/streamdeck/sdk/)
+[![Stream Deck SDK](https://img.shields.io/badge/Stream%20Deck%20SDK-v3-111827?logo=elgato)](https://docs.elgato.com/streamdeck/sdk/)
 [![Node](https://img.shields.io/badge/Node-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2012%2B%20%7C%20Windows%2010%2B-2563eb)](https://docs.elgato.com/streamdeck/sdk/introduction/distribution)
 
 A Stream Deck plugin for monitoring AWS services, starting with **CodePipeline**.
 
-It renders stage-by-stage status directly on the key and supports fast actions for refresh, AWS Console open, and optional CloudWatch log access.
+It renders stage-by-stage deployment status directly on the key, colors each key by environment, and offers fast actions for refresh, AWS Console, and optional CloudWatch logs.
 
 ## Screenshots
 
-Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
-
 ![Key states overview](docs/images/key-states/overview.png)
+
+_Key states: `Not Configured` → `Loading` → `Partially Complete` → `Fully Complete`._
 
 ## Why This Plugin
 
@@ -22,13 +22,13 @@ Order: `Not Configured` -> `Loading` -> `Partially Complete` -> `Fully Complete`
 ## Features
 
 - Real-time CodePipeline stage monitoring
-- Visual key rendering with status icons and timestamp footer
+- Visual key rendering with status icons and a timestamp footer
 - Optional colored border per key for environment identification (`red` / `orange` / `yellow` / `green` / `blue` / `indigo` / `violet`)
-- Status transition animation (`0.3s` loading transition on state change)
-- Long press (`1.3s`) to open pipeline in AWS Console
-- Double-click to open CloudWatch Log Group (optional)
-- Debug simulation mode (`Pipeline Name = debug`)
-- Configurable polling timeout (`Polling Max (minutes)`)
+- Two-speed, never-stopping polling: fast (`60s`) while a stage is running, idle (`5m`) once settled — automatically picks up the next deployment
+- Status transition animation (`0.3s` loading overlay on state change)
+- Short press to refresh; long press (`1.3s`) to open the pipeline in AWS Console
+- Double-click to open the CloudWatch Log Group (optional)
+- Debug simulation mode (`Pipeline Name = debug`) — no AWS credentials needed
 - Independent `Pipeline Region` and `Log Group Region`
 
 ### Environment Border Colors
@@ -40,29 +40,37 @@ Pick a **Border Color** in the Property Inspector to frame the key — handy for
 ## Requirements
 
 - Stream Deck software `6.9+`
-- Node.js `20`
 - macOS `12+` or Windows `10+`
 - AWS credentials with CodePipeline read access
+- Node.js `20` (only to build from source)
 
-## Quick Start
+## Installation
+
+### From a release (recommended)
+
+Download the latest `.streamDeckPlugin` from the [Releases page](https://github.com/PhantasWeng/streamdeck-aws-monitor/releases/latest) and double-click it to install.
+
+### From source
 
 ```bash
 git clone https://github.com/PhantasWeng/streamdeck-aws-monitor
 cd streamdeck-aws-monitor
-npm install
-npm run build:bundle
+yarn install
+yarn build:bundle
 npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 ```
 
 ## Usage
 
-1. Open Stream Deck and drag **CodePipeline** action to a key.
-2. Fill settings in Property Inspector and save.
-3. Use key interactions:
+1. Open Stream Deck and drag the **CodePipeline** action onto a key.
+2. Fill in the settings in the Property Inspector and save.
+3. Interact with the key:
 
-- Short press: Refresh Status
-- Double-click: Open CloudWatch Log Group (when configured)
-- Long press (`1.3s`): Open CodePipeline in AWS Console
+| Interaction | Action |
+| --- | --- |
+| Short press | Refresh status |
+| Double-click | Open CloudWatch Log Group (when configured) |
+| Long press (`1.3s`) | Open the pipeline in AWS Console |
 
 ## Configuration
 
@@ -70,27 +78,24 @@ npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 | --- | --- | --- |
 | `AWS_ACCESS_KEY_ID` | Yes (except debug) | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | Yes (except debug) | AWS secret key |
-| `Pipeline Name` | Yes | CodePipeline name; set `debug` to enable simulation mode |
+| `Pipeline Name` | Yes | CodePipeline name; set to `debug` to enable simulation mode |
 | `Pipeline Region` | Yes (except debug) | Region for CodePipeline API calls |
 | `Display Name` | No | Custom key title |
 | `Border Color` | No | Environment border color (`red`/`orange`/`yellow`/`green`/`blue`/`indigo`/`violet`); empty for none |
-| `Log Group Name` | No | CloudWatch log group for double-click action |
-| `Log Group Region` | No | Region for CloudWatch log URL; defaults to pipeline region |
-| `Polling Max (minutes)` | No | Polling timeout; default `30` |
+| `Log Group Name` | No | CloudWatch log group for the double-click action |
+| `Log Group Region` | No | Region for the CloudWatch log URL; defaults to the pipeline region |
+| `Polling Max (minutes)` | No | How long a single running deployment is fast-watched before dropping to idle polling; default `30` |
 
 ## Debug Mode
 
-Set `Pipeline Name` to `debug`.
+Set `Pipeline Name` to `debug` to preview the plugin without AWS credentials.
 
-Behavior:
-- Starts with three loading stages
-- Simulates partial and full completion states
-- Uses the same rendering and transition logic as normal mode
-- Uses the same two-speed, never-stopping polling loop as normal mode
+- Starts with three loading stages, then simulates partial and full completion
+- Uses the same rendering, transition, and two-speed polling logic as normal mode
 
 ## IAM Permissions
 
-Minimum policy example:
+Minimum policy:
 
 ```json
 {
@@ -107,13 +112,13 @@ Minimum policy example:
 
 ## Development
 
-Run watch mode:
-
 ```bash
-yarn watch
+yarn watch       # rebuild + restart the plugin on change
+yarn test        # run the vitest suite
+yarn lint        # Biome lint check
 ```
 
-Run Stream Deck in debug mode (macOS):
+Launch Stream Deck in debug mode to view plugin logs (macOS):
 
 ```bash
 open -a "Elgato Stream Deck" --args -debug
@@ -124,13 +129,16 @@ Project structure:
 ```text
 aws-monitor/
 ├── src/
-│   ├── actions/codepipeline.ts
-│   └── plugin.ts
+│   ├── actions/codepipeline.ts   # action class + polling orchestration
+│   ├── rendering.ts              # node-canvas key rendering
+│   ├── polling.ts                # pure poll-cadence logic
+│   ├── settings.ts               # settings types + pure helpers
+│   └── plugin.ts                 # entry point
 ├── com.phantas-weng.aws-monitor.sdPlugin/
 │   ├── manifest.json
-│   ├── ui/codepipeline.html
+│   ├── ui/codepipeline.html      # Property Inspector
 │   └── imgs/
-├── scripts/
+├── scripts/                      # build / bump / screenshot tooling
 ├── package.json
 └── rollup.config.mjs
 ```
@@ -162,33 +170,25 @@ yarn build
 
 ## Screenshot Asset Generation
 
-Regenerate README screenshot assets:
-
 ```bash
 yarn screenshots:key-states
 ```
 
-This regenerates `docs/images/key-states/*.png`, including `overview.png`.
+Regenerates `docs/images/key-states/*.png`, including `overview.png` and `border-colors.png`.
 
 ## Troubleshooting
 
-- Key stays in `NOT SET`:
-  verify required fields are saved.
-- Double-click does nothing:
-  check `Log Group Name` and `Log Group Region`.
-- Slow updates after completion:
-  once all stages settle, polling drops to a slower cadence (every `5` minutes) but keeps
-  running to auto-detect the next deployment; short-press to refresh immediately.
+- **Key stays in `NOT SET`:** verify the required fields are saved.
+- **Double-click does nothing:** check `Log Group Name` and `Log Group Region`.
+- **Slow updates after completion:** once all stages settle, polling drops to a slower cadence (every `5` minutes) but keeps running to auto-detect the next deployment; short-press to refresh immediately.
 
 ## Contributing
 
 Issues and pull requests are welcome.
 
-Recommended flow:
-
 1. Fork the repo
 2. Create a feature branch
-3. Make changes and validate behavior on Stream Deck
+3. Make changes and validate behavior on Stream Deck (`yarn test` + `yarn lint`)
 4. Open a pull request with context and screenshots
 
 ## License
