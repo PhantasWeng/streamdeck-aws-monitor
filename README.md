@@ -41,8 +41,18 @@ Pick a **Border Color** in the Property Inspector to frame the key — handy for
 
 - Stream Deck software `6.9+`
 - macOS `12+` or Windows `10+`
-- AWS credentials with CodePipeline read access
-- Node.js `20` (only to build from source)
+- An AWS access key pair (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) with permission to call `codepipeline:GetPipelineState` on the pipelines you want to monitor — see [IAM Permissions](#iam-permissions)
+- The pipeline name and its region
+
+Optional, per feature:
+
+- **Double-click → CloudWatch logs**: a `Log Group Name` (and its region, if different from the pipeline region)
+- **Long press → AWS Console**: no extra setting, but your browser must be signed in to the AWS Console
+
+You do **not** need:
+
+- **aws-cli** — the plugin talks to AWS via the AWS SDK directly; credentials are entered in the Property Inspector, and `~/.aws/credentials` / `AWS_*` environment variables are never read
+- **Node.js** — Stream Deck `6.9+` ships its own Node.js `20` runtime (installing Node is only needed to build from source)
 
 ## Installation
 
@@ -95,7 +105,7 @@ Set `Pipeline Name` to `debug` to preview the plugin without AWS credentials.
 
 ## IAM Permissions
 
-Minimum policy:
+`codepipeline:GetPipelineState` is the only API the plugin calls. Minimum policy, scoped to the pipelines you monitor:
 
 ```json
 {
@@ -104,11 +114,14 @@ Minimum policy:
     {
       "Effect": "Allow",
       "Action": ["codepipeline:GetPipelineState"],
-      "Resource": "arn:aws:codepipeline:*:*:*"
+      "Resource": "arn:aws:codepipeline:<region>:<account-id>:<pipeline-name>"
     }
   ]
 }
 ```
+
+> [!IMPORTANT]
+> Credentials are stored as plaintext in the Stream Deck settings file, so use a dedicated IAM user with a least-privilege key like the one above — never a personal or admin key. SSO / assume-role / session tokens are not supported; only long-term access keys work.
 
 ## Development
 
