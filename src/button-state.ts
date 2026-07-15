@@ -18,6 +18,9 @@ export type ButtonState = StageTransitionState & {
 	fetcher?: StatusFetcher;
 	client?: CodePipelineClient;
 	clientKey?: string;
+	// onWillDisappear 已釋放此實例；任何跨越 async 邊界（await fetch）
+	// 而殘留的 poll / 動畫鏈都應檢查此旗標並自我終止，避免殭屍計時器
+	disposed?: boolean;
 };
 
 const LOADING_ANIMATION_FPS = 10;
@@ -62,12 +65,13 @@ export const clearLoadingAnimation = (state: ButtonState): void => {
  * 同步 loading 動畫狀態
  */
 export const syncLoadingAnimation = (state: ButtonState, shouldAnimate: boolean, renderer: () => Promise<void>): void => {
-	state.loadingRenderer = renderer;
-
-	if (!shouldAnimate) {
+	// 已釋放的殘留鏈不得再啟動動畫（否則會產生永不被清的殭屍計時器）
+	if (state.disposed || !shouldAnimate) {
 		clearLoadingAnimation(state);
 		return;
 	}
+
+	state.loadingRenderer = renderer;
 
 	if (state.loadingAnimationTimer) {
 		return;
@@ -75,6 +79,11 @@ export const syncLoadingAnimation = (state: ButtonState, shouldAnimate: boolean,
 
 	state.loadingAngle = 0;
 	state.loadingAnimationTimer = setInterval(() => {
+		// 實例已釋放時自我停止並清理，防止殭屍計時器持續 setImage
+		if (state.disposed) {
+			clearLoadingAnimation(state);
+			return;
+		}
 		state.loadingAngle = ((state.loadingAngle ?? 0) + LOADING_ROTATION_STEP) % 360;
 		const currentRenderer = state.loadingRenderer;
 		if (currentRenderer) {
@@ -91,6 +100,8 @@ export const disposeButtonState = (actionId: string): void => {
 	if (!state) {
 		return;
 	}
+	// 先標記釋放，讓任何 in-flight 的 poll / 動畫鏈（await 期間）自我終止
+	state.disposed = true;
 	clearRefreshTimer(state);
 	clearPressTimer(state);
 	clearLoadingAnimation(state);

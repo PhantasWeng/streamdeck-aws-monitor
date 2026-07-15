@@ -2,6 +2,7 @@ import streamDeck, { action, type KeyDownEvent, type KeyUpEvent, SingletonAction
 import type { JsonObject, JsonValue } from "@elgato/utils";
 import { fetchPipelineStatuses } from "../aws";
 import {
+	type ButtonState,
 	clearLoadingAnimation,
 	clearPressTimer,
 	clearRefreshTimer,
@@ -37,7 +38,7 @@ type ButtonEvent =
 	| DidReceiveSettingsEvent<CodePipelineMonitorSettings>;
 
 // 常數
-const LONG_PRESS_DURATION = 1300;
+const LONG_PRESS_DURATION = 800;
 const FAST_REFRESH_INTERVAL = 60000; // 有 stage 進行中時的快輪間隔
 const IDLE_REFRESH_INTERVAL = 300000; // 落定後的慢輪間隔（5 分鐘），持續偵測新部署
 const DOUBLE_CLICK_THRESHOLD = 500; // 雙擊閾值 (ms)
@@ -89,7 +90,7 @@ export class CodePipelineMonitor extends SingletonAction<CodePipelineMonitorSett
 
 			clearPressTimer(state);
 			state.pressTimer = setTimeout(() => {
-				streamDeck.logger.debug('長按超過1.3秒');
+				streamDeck.logger.debug('長按超過 0.8 秒');
 				streamDeck.system.openUrl(getAwsConsoleUrl(settings));
 				// 清理計時器
 				state.pressTimer = undefined;
@@ -176,8 +177,11 @@ const startMonitoring = (ev: ButtonEvent): void => {
 	void pollOnce(ev, settings, intervals);
 };
 
-const scheduleNextPoll = (ev: ButtonEvent, settings: CodePipelineMonitorSettings, intervals: PollIntervals, nextInterval: number): void => {
-	const state = getButtonState(ev.action.id);
+const scheduleNextPoll = (state: ButtonState, ev: ButtonEvent, settings: CodePipelineMonitorSettings, intervals: PollIntervals, nextInterval: number): void => {
+	// 實例已釋放（onWillDisappear）則不再排下一輪，避免殭屍輪詢
+	if (state.disposed) {
+		return;
+	}
 	clearRefreshTimer(state);
 	state.refreshTimer = setTimeout(() => {
 		state.refreshTimer = undefined;
@@ -196,6 +200,11 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 
 	try {
 		const statuses = await fetcher();
+		// fetch 期間可能已 onWillDisappear：此鏈持有的 state 已被釋放/取代，
+		// 必須就此停止，否則會啟動永不被清的殭屍動畫計時器造成畫面閃爍
+		if (state.disposed) {
+			return;
+		}
 		const hasStatusTransition = registerStageStatusTransitions(state, statuses);
 
 		// 依原始 statuses 決定輪詢節奏；classifyPoll 同時維護 pollingStartedAt，
@@ -225,7 +234,7 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 		};
 
 		// 永不停止：一律排下一輪。有進行中→快輪；落定/terminated→慢輪背景偵測新部署
-		scheduleNextPoll(ev, settings, intervals, nextInterval);
+		scheduleNextPoll(state, ev, settings, intervals, nextInterval);
 		if (isTerminated) {
 			streamDeck.logger.debug('Active run exceeded max time, slowing to idle polling');
 		}
@@ -242,10 +251,14 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 		// 暫時性錯誤（網路中斷、休眠喚醒等）不停止 polling，
 		// 在快輪視窗內快速重試，超過後降為慢輪繼續重試（永不完全停止）
 		streamDeck.logger.error('Failed to fetch pipeline state', error);
+		// fetch 失敗期間也可能已 onWillDisappear，釋放後不再重試排程
+		if (state.disposed) {
+			return;
+		}
 		ev.action.showAlert();
 
 		state.pollingStartedAt ??= Date.now();
 		const withinFastWindow = Date.now() - state.pollingStartedAt < pollingMaxMs;
-		scheduleNextPoll(ev, settings, intervals, withinFastWindow ? intervals.fast : intervals.idle);
+		scheduleNextPoll(state, ev, settings, intervals, withinFastWindow ? intervals.fast : intervals.idle);
 	}
 };

@@ -26,7 +26,7 @@ _Key states: `Not Configured` → `Loading` → `Partially Complete` → `Fully 
 - Optional colored border per key for environment identification (`red` / `orange` / `yellow` / `green` / `blue` / `indigo` / `violet`)
 - Two-speed, never-stopping polling: fast (`60s`) while a stage is running, idle (`5m`) once settled — automatically picks up the next deployment
 - Status transition animation (`0.3s` loading overlay on state change)
-- Short press to refresh; long press (`1.3s`) to open the pipeline in AWS Console
+- Short press to refresh; long press (`0.8s`) to open the pipeline in AWS Console
 - Double-click to open the CloudWatch Log Group (optional)
 - Debug simulation mode (`Pipeline Name = debug`) — no AWS credentials needed
 - Independent `Pipeline Region` and `Log Group Region`
@@ -80,7 +80,7 @@ npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 | --- | --- |
 | Short press | Refresh status |
 | Double-click | Open CloudWatch Log Group (when configured) |
-| Long press (`1.3s`) | Open the pipeline in AWS Console |
+| Long press (`0.8s`) | Open the pipeline in AWS Console |
 
 ## Configuration
 

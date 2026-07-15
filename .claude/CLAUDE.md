@@ -69,7 +69,7 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Frame cache**: the loading spinner rotates in 24° steps (15 distinct frames) and the only other time-varying element is the `HH:mm` footer text, so `rendering.ts` caches complete frame data URLs keyed by `(title, statuses, footer, rotation)` and invalidates the cache when the minute changes. This avoids re-drawing/PNG-encoding at 10 FPS.
 
-**Button interactions**: short press → refresh; double-click (within 500ms) → open CloudWatch logs (requires `logGroupName`); long-press (1.3s) → open AWS Console
+**Button interactions**: short press → refresh; double-click (within 500ms) → open CloudWatch logs (requires `logGroupName`); long-press (0.8s) → open AWS Console
 
 **Debug mode**: Set `pipelineName` to `debug` in settings — simulates 3-stage pipeline progression without AWS credentials (see `src/debug.ts`). Useful for UI development.
 
