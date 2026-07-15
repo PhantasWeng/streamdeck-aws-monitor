@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0.0] - 2026-07-15
+
+### Features
+
+- render stage statuses as segmented progress bar supporting any stage count (7ff85ac)
+
 ## [1.0.1.0] - 2026-07-15
 
 ### Bug Fixes
