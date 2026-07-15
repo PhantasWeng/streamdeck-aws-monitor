@@ -19,6 +19,7 @@ import {
 	getBorderColorHex,
 	getButtonTitle,
 	getCloudWatchLogGroupUrl,
+	getDebugStageCount,
 	getPollingMaxMinutes,
 	hasRequiredSettings,
 	isDebugMode,
@@ -168,7 +169,7 @@ const startMonitoring = (ev: ButtonEvent): void => {
 
 	const debug = isDebugMode(settings);
 	state.fetcher = debug
-		? createDebugFetcher()
+		? createDebugFetcher(getDebugStageCount(settings))
 		: () => fetchPipelineStatuses(state, settings);
 	// debug 模式快輪與慢輪都用短間隔，方便快速觀察快/慢切換
 	const intervals: PollIntervals = debug

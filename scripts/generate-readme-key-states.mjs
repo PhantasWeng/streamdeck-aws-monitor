@@ -12,28 +12,20 @@ const actionKeyIconPath = path.resolve(
 );
 
 // Keep these definitions aligned with src/rendering.ts
-const ICON_CONFIRM_CIRCLE = [
-  { d: "M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z" },
-  { d: "M8 12l3 3l5-5" }
-];
-
-const ICON_CLOSE_CIRCLE = [
-  { d: "M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z" },
-  { d: "M12 12l4 4M12 12l-4-4M12 12l-4 4M12 12l4-4" }
-];
-
-const ICON_LOADING = [
-  { d: "M12 3c4.97 0 9 4.03 9 9" },
-  { d: "M12 3c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9c0-4.97 4.03-9 9-9Z", opacity: 0.3 }
-];
-
 const ICON_CHECK = [{ d: "M5 11l6 6l10-10" }];
 const ICON_ARROW_DOWN = [{ d: "M12 5v12" }, { d: "M7 13l5 5l5-5" }];
 
 const CANVAS_SIZE = 144;
 const TITLE_Y = 16;
-const STATUS_ICON_Y = 62;
 const INIT_STATUS_LABEL = "NOT SET";
+
+// 分段進度條幾何（對齊 src/rendering.ts）
+const BAR_MARGIN_X = 8;
+const BAR_WIDTH = CANVAS_SIZE - BAR_MARGIN_X * 2;
+const BAR_Y = 56;
+const BAR_HEIGHT = 17;
+const BAR_LABEL_Y = 86;
+const FOOTER_TEXT_Y = 124;
 
 const BORDER_WIDTH = 6;
 const BORDER_RADIUS = 22;
@@ -126,41 +118,69 @@ const drawBreathingIcon = async (ctx, paths, color, x, y, size, phaseDeg) => {
   ctx.restore();
 };
 
-const getStatusIcon = (status) => {
-  if (status === "Succeeded") return { icon: ICON_CONFIRM_CIRCLE, color: "#4ade80" };
-  if (status === "Failed") return { icon: ICON_CLOSE_CIRCLE, color: "#f87171" };
-  return { icon: ICON_LOADING, color: "#60a5fa" };
+const getStatusColor = (status) => {
+  if (status === "Succeeded") return "#4ade80";
+  if (status === "Failed") return "#f87171";
+  if (status === "") return "rgba(255, 255, 255, 0.28)";
+  return "#60a5fa";
 };
 
 const isLoadingStatus = (status) => status !== "Succeeded" && status !== "Failed";
 
-const drawStatusSymbols = async (ctx, statuses, loadingAngleDeg) => {
-  const iconSize = 32;
-  const gap = 6;
-  const totalWidth = statuses.length * iconSize + (statuses.length - 1) * gap;
-  let x = (CANVAS_SIZE - totalWidth) / 2;
-  const y = STATUS_ICON_Y;
+const fillRoundedRect = (ctx, x, y, width, height, radius) => {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+  ctx.fill();
+};
 
-  for (const status of statuses) {
-    const { icon, color } = getStatusIcon(status);
-    const rotationDeg = isLoadingStatus(status) ? loadingAngleDeg : 0;
-    await drawIcon(ctx, icon, color, x, y, iconSize, rotationDeg);
-    x += iconSize + gap;
+const drawStatusBar = (ctx, statuses, loadingAngleDeg) => {
+  const count = statuses.length;
+  if (count === 0) {
+    return;
   }
+
+  const gap = count > 8 ? 2 : 4;
+  const segmentWidth = (BAR_WIDTH - gap * (count - 1)) / count;
+  const wave = Math.sin((loadingAngleDeg * Math.PI) / 180);
+  const pulseAlpha = 0.45 + 0.55 * ((wave + 1) / 2);
+
+  let x = BAR_MARGIN_X;
+  for (const status of statuses) {
+    ctx.save();
+    if (status !== "" && isLoadingStatus(status)) {
+      ctx.globalAlpha = pulseAlpha;
+    }
+    ctx.fillStyle = getStatusColor(status);
+    fillRoundedRect(ctx, x, BAR_Y, segmentWidth, BAR_HEIGHT, 5);
+    ctx.restore();
+    x += segmentWidth + gap;
+  }
+
+  const succeededCount = statuses.filter((status) => status === "Succeeded").length;
+  ctx.fillStyle = "white";
+  ctx.font = "24px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(`${succeededCount}/${count}`, CANVAS_SIZE / 2, BAR_LABEL_Y);
 };
 
 const drawFooter = async (ctx, isAllSucceeded, isRefreshing, loadingAngleDeg) => {
-  // 時間靠左、footer 狀態圖示靠右
+  // 時間靠左、footer 狀態圖示靠右（縮小字級與 icon，對齊 src/rendering.ts）
   ctx.fillStyle = "white";
-  ctx.font = "26px sans-serif";
+  ctx.font = "18px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText(formatTime(), 8, 116);
+  ctx.fillText(formatTime(), 8, FOOTER_TEXT_Y);
   if (isAllSucceeded) {
-    await drawIcon(ctx, ICON_CHECK, "#4ade80", 114, 116, 22);
+    await drawIcon(ctx, ICON_CHECK, "#4ade80", 120, FOOTER_TEXT_Y, 16);
   } else if (isRefreshing) {
-    await drawBreathingIcon(ctx, ICON_ARROW_DOWN, "white", 114, 116, 22, loadingAngleDeg);
+    await drawBreathingIcon(ctx, ICON_ARROW_DOWN, "white", 120, FOOTER_TEXT_Y, 16, loadingAngleDeg);
   } else {
-    await drawIcon(ctx, ICON_ARROW_DOWN, "white", 114, 116, 22);
+    await drawIcon(ctx, ICON_ARROW_DOWN, "white", 120, FOOTER_TEXT_Y, 16);
   }
 };
 
@@ -198,7 +218,7 @@ const renderDebugLikeFrame = async (
   ctx.scale(scale, scale);
 
   drawTitle(ctx, title);
-  await drawStatusSymbols(ctx, statuses, loadingAngleDeg);
+  drawStatusBar(ctx, statuses, loadingAngleDeg);
   await drawFooter(
     ctx,
     statuses.every((status) => status === "Succeeded"),

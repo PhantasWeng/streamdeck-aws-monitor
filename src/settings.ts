@@ -15,6 +15,8 @@ export type CodePipelineMonitorSettings = {
 };
 
 export const DEBUG_PIPELINE_NAME = 'debug';
+// debug 或 debug:N（N = 模擬 stage 數）
+const DEBUG_PIPELINE_NAME_PATTERN = /^debug(?::(\d+))?$/;
 export const DEFAULT_POLLING_MAX_MINUTES = 30;
 
 // 外框顏色代號 → hex 對應表（紅橙黃綠藍靛紫）
@@ -39,10 +41,23 @@ const DEBUG_REQUIRED_FIELDS: (keyof CodePipelineMonitorSettings)[] = [
 ];
 
 /**
- * pipelineName 為 `debug` 時進入模擬模式（不需要 AWS 憑證）
+ * pipelineName 為 `debug` 或 `debug:N` 時進入模擬模式（不需要 AWS 憑證），
+ * N 為模擬的 stage 數量（省略時用預設值）
  */
 export const isDebugMode = (settings: CodePipelineMonitorSettings): boolean => {
-	return settings.pipelineName?.trim().toLowerCase() === DEBUG_PIPELINE_NAME;
+	return DEBUG_PIPELINE_NAME_PATTERN.test(settings.pipelineName?.trim().toLowerCase() ?? '');
+};
+
+/**
+ * 取得 debug 模式的模擬 stage 數；`debug` 未指定數量時回傳 undefined（用預設值）。
+ * 數量限制在 1–12（Stream Deck 按鈕 144px 寬的可辨識上限）
+ */
+export const getDebugStageCount = (settings: CodePipelineMonitorSettings): number | undefined => {
+	const match = DEBUG_PIPELINE_NAME_PATTERN.exec(settings.pipelineName?.trim().toLowerCase() ?? '');
+	if (!match?.[1]) {
+		return undefined;
+	}
+	return Math.min(12, Math.max(1, Number(match[1])));
 };
 
 export const getPipelineRegion = (settings: CodePipelineMonitorSettings): string =>

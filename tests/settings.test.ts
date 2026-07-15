@@ -6,6 +6,7 @@ import {
 	getBorderColorHex,
 	getButtonTitle,
 	getCloudWatchLogGroupUrl,
+	getDebugStageCount,
 	getLogRegion,
 	getPipelineRegion,
 	getPollingMaxMinutes,
@@ -27,9 +28,29 @@ describe('isDebugMode', () => {
 		expect(isDebugMode({ ...baseSettings, pipelineName: '  DEBUG ' })).toBe(true);
 	});
 
+	it('debug:N 也啟用（指定模擬 stage 數）', () => {
+		expect(isDebugMode({ ...baseSettings, pipelineName: 'debug:6' })).toBe(true);
+		expect(isDebugMode({ ...baseSettings, pipelineName: ' Debug:10 ' })).toBe(true);
+	});
+
 	it('一般 pipeline 名稱不啟用', () => {
 		expect(isDebugMode(baseSettings)).toBe(false);
 		expect(isDebugMode({ ...baseSettings, pipelineName: 'debug-pipeline' })).toBe(false);
+		expect(isDebugMode({ ...baseSettings, pipelineName: 'debug:' })).toBe(false);
+		expect(isDebugMode({ ...baseSettings, pipelineName: 'debug:abc' })).toBe(false);
+	});
+});
+
+describe('getDebugStageCount', () => {
+	it('debug:N 回傳 N，並限制在 1–12', () => {
+		expect(getDebugStageCount({ ...baseSettings, pipelineName: 'debug:6' })).toBe(6);
+		expect(getDebugStageCount({ ...baseSettings, pipelineName: 'debug:0' })).toBe(1);
+		expect(getDebugStageCount({ ...baseSettings, pipelineName: 'debug:99' })).toBe(12);
+	});
+
+	it('純 debug 或非 debug 名稱回傳 undefined', () => {
+		expect(getDebugStageCount({ ...baseSettings, pipelineName: 'debug' })).toBeUndefined();
+		expect(getDebugStageCount(baseSettings)).toBeUndefined();
 	});
 });
 

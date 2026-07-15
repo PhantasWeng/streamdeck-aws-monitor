@@ -22,7 +22,7 @@ _Key states: `Not Configured` → `Loading` → `Partially Complete` → `Fully 
 ## Features
 
 - Real-time CodePipeline stage monitoring
-- Visual key rendering with status icons and a timestamp footer
+- Segmented progress bar colored per stage (works with any number of stages), a `done/total` counter, and a timestamp footer
 - Optional colored border per key for environment identification (`red` / `orange` / `yellow` / `green` / `blue` / `indigo` / `violet`)
 - Two-speed, never-stopping polling: fast (`60s`) while a stage is running, idle (`5m`) once settled — automatically picks up the next deployment
 - Status transition animation (`0.3s` loading overlay on state change)
@@ -100,7 +100,8 @@ npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 
 Set `Pipeline Name` to `debug` to preview the plugin without AWS credentials.
 
-- Starts with three loading stages, then simulates partial and full completion
+- Simulates one deployment run at a time: all stages start loading, then succeed one by one; a stage may randomly fail, which ends the run — the next round starts automatically
+- Use `debug:N` (e.g. `debug:6`) to simulate a pipeline with `N` stages (1–12)
 - Uses the same rendering, transition, and two-speed polling logic as normal mode
 
 ## IAM Permissions

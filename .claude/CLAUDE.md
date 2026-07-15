@@ -49,7 +49,7 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 - `button-state.ts` — per-button `ButtonState` in a single `Map<actionId, ButtonState>` (timers, loading animation, cached AWS client). `disposeButtonState()` cleans everything at once on `onWillDisappear`.
 - `transitions.ts` — stage-status-change tracking with brief "TransitionLoading" overlay (300ms), unit-tested
 - `polling.ts` — pure poll-cadence logic: `isLoadingStatus`, `classifyPoll` (active/settled/terminated + `pollingStartedAt` bookkeeping), `deriveFooter`, `FrameFooter` type. Unit-tested, no canvas/AWS deps.
-- `rendering.ts` — node-canvas drawing (144×144, SVG icons from Iconify line-md) + full-frame data-URL cache
+- `rendering.ts` — node-canvas drawing (144×144): stage 狀態畫成分段進度條（每段依狀態上色，任意 stage 數自動均分，下方顯示「完成數/總數」），footer 用 Iconify line-md SVG 圖示 + full-frame data-URL cache
 - `aws.ts` — CodePipeline client (cached per button, credentials passed directly — never via `process.env`) and stage-status fetch
 - `debug.ts` — simulated 3-stage pipeline fetcher for debug mode
 
@@ -67,11 +67,11 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Canvas rendering**: `canvas` is marked `external` in `rollup.config.mjs` because the Stream Deck Node.js runtime provides it. All button images are drawn via `createCanvas(144, 144)` and sent as base64 data URLs via `ev.action.setImage()`.
 
-**Frame cache**: the loading spinner rotates in 24° steps (15 distinct frames) and the only other time-varying element is the `HH:mm` footer text, so `rendering.ts` caches complete frame data URLs keyed by `(title, statuses, footer, rotation)` and invalidates the cache when the minute changes. This avoids re-drawing/PNG-encoding at 10 FPS.
+**Frame cache**: the loading animation phase advances in 24° steps (15 distinct frames — drives the in-progress segments' pulse and the footer breathing arrow) and the only other time-varying element is the `HH:mm` footer text, so `rendering.ts` caches complete frame data URLs keyed by `(title, statuses, footer, rotation)` and invalidates the cache when the minute changes. This avoids re-drawing/PNG-encoding at 10 FPS.
 
 **Button interactions**: short press → refresh; double-click (within 500ms) → open CloudWatch logs (requires `logGroupName`); long-press (0.8s) → open AWS Console
 
-**Debug mode**: Set `pipelineName` to `debug` in settings — simulates 3-stage pipeline progression without AWS credentials (see `src/debug.ts`). Useful for UI development.
+**Debug mode**: Set `pipelineName` to `debug` (or `debug:N` for an N-stage simulation, N clamped to 1–12) in settings — simulates pipeline progression without AWS credentials (see `src/debug.ts`). Useful for UI development.
 
 **Settings normalization**: `normalizeSettings()` runs on every settings change, coalescing the deprecated `region` field into `pipelineRegion`/`logRegion`.
 

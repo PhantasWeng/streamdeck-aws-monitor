@@ -7,21 +7,6 @@ import { type FrameFooter, isLoadingStatus } from './polling';
 // Iconify line-md icon path definitions（靜態版，移除動畫）
 type IconPathDef = { d: string; opacity?: number };
 
-const ICON_CONFIRM_CIRCLE: IconPathDef[] = [
-	{ d: 'M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z' },
-	{ d: 'M8 12l3 3l5-5' },
-];
-
-const ICON_CLOSE_CIRCLE: IconPathDef[] = [
-	{ d: 'M3 12c0-4.97 4.03-9 9-9c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9Z' },
-	{ d: 'M12 12l4 4M12 12l-4-4M12 12l-4 4M12 12l4-4' },
-];
-
-const ICON_LOADING: IconPathDef[] = [
-	{ d: 'M12 3c4.97 0 9 4.03 9 9' },
-	{ d: 'M12 3c4.97 0 9 4.03 9 9c0 4.97-4.03 9-9 9c-4.97 0-9-4.03-9-9c0-4.97 4.03-9 9-9Z', opacity: 0.3 },
-];
-
 // Footer 用圖示（無圓圈）
 const ICON_CHECK: IconPathDef[] = [
 	{ d: 'M5 11l6 6l10-10' },
@@ -42,8 +27,17 @@ const CANVAS_SIZE = 144;
 // 未設定畫面底部狀態文字（簡短）
 const INIT_STATUS_LABEL = 'NOT SET';
 const TITLE_Y = 16;
-// 狀態 icon 略低於水平中線，與加大的標題做視覺平衡
-const STATUS_ICON_Y = 62;
+
+// 分段進度條幾何：全寬置中，佔據中間主要空間（footer 縮小讓位），
+// 上緣與標題間保留空隙
+const BAR_MARGIN_X = 8;
+const BAR_WIDTH = CANVAS_SIZE - BAR_MARGIN_X * 2;
+const BAR_Y = 56;
+const BAR_HEIGHT = 17;
+// 進度標籤（完成數/總數）置於進度條下方
+const BAR_LABEL_Y = 86;
+// Footer 縮小貼齊底部：時間與狀態 icon 的垂直中心對齊
+const FOOTER_TEXT_Y = 124;
 
 const iconImageCache = new Map<string, Promise<Image>>();
 const actionKeyIconPath = path.resolve(
@@ -156,29 +150,66 @@ const drawBreathingIcon = async (
 };
 
 /**
- * 取得 pipeline 狀態對應的圖示
+ * 取得 pipeline 狀態對應的進度條顏色。
+ * 空字串代表該 stage 尚未執行過（latestExecution 不存在），顯示為灰色未開始段
  */
-const getStatusIcon = (status: string): { icon: IconPathDef[]; color: string } => {
-	if (status === 'Succeeded') return { icon: ICON_CONFIRM_CIRCLE, color: '#4ade80' };
-	if (status === 'Failed') return { icon: ICON_CLOSE_CIRCLE, color: '#f87171' };
-	return { icon: ICON_LOADING, color: '#60a5fa' };
+const getStatusColor = (status: string): string => {
+	if (status === 'Succeeded') return '#4ade80';
+	if (status === 'Failed') return '#f87171';
+	if (status === '') return 'rgba(255, 255, 255, 0.28)';
+	return '#60a5fa';
 };
 
 /**
- * 繪製狀態圖示
+ * 繪製圓角矩形路徑並填色
  */
-const drawStatusSymbols = async (ctx: CanvasRenderingContext2D, statuses: string[], rotationDeg: number): Promise<void> => {
-	const iconSize = 32;
-	const gap = 6;
-	const totalWidth = statuses.length * iconSize + (statuses.length - 1) * gap;
-	let x = (CANVAS_SIZE - totalWidth) / 2;
-	const y = STATUS_ICON_Y;
+const fillRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void => {
+	const r = Math.min(radius, width / 2, height / 2);
+	ctx.beginPath();
+	ctx.moveTo(x + r, y);
+	ctx.arcTo(x + width, y, x + width, y + height, r);
+	ctx.arcTo(x + width, y + height, x, y + height, r);
+	ctx.arcTo(x, y + height, x, y, r);
+	ctx.arcTo(x, y, x + width, y, r);
+	ctx.closePath();
+	ctx.fill();
+};
 
-	for (const status of statuses) {
-		const { icon, color } = getStatusIcon(status);
-		await drawIcon(ctx, icon, color, x, y, iconSize, isLoadingStatus(status) ? rotationDeg : 0);
-		x += iconSize + gap;
+/**
+ * 繪製分段進度條：每段對應一個 stage 並依狀態上色，
+ * 進行中（含過場）的段以 rotationDeg 為相位做脈動；
+ * 段寬依 stage 數量自動均分，不限 stage 數量。
+ * 下方置中顯示「完成數/總數」
+ */
+const drawStatusBar = (ctx: CanvasRenderingContext2D, statuses: string[], rotationDeg: number): void => {
+	const count = statuses.length;
+	if (count === 0) {
+		return;
 	}
+
+	const gap = count > 8 ? 2 : 4;
+	const segmentWidth = (BAR_WIDTH - gap * (count - 1)) / count;
+	// 與 loading 旋轉共用相位（0–360 循環），維持幀快取的有限 key 空間
+	const wave = Math.sin((rotationDeg * Math.PI) / 180);
+	const pulseAlpha = 0.45 + 0.55 * ((wave + 1) / 2);
+
+	let x = BAR_MARGIN_X;
+	for (const status of statuses) {
+		ctx.save();
+		if (status !== '' && isLoadingStatus(status)) {
+			ctx.globalAlpha = pulseAlpha;
+		}
+		ctx.fillStyle = getStatusColor(status);
+		fillRoundedRect(ctx, x, BAR_Y, segmentWidth, BAR_HEIGHT, 5);
+		ctx.restore();
+		x += segmentWidth + gap;
+	}
+
+	const succeededCount = statuses.filter(status => status === 'Succeeded').length;
+	ctx.fillStyle = 'white';
+	ctx.font = '24px sans-serif';
+	ctx.textAlign = 'center';
+	ctx.fillText(`${succeededCount}/${count}`, CANVAS_SIZE / 2, BAR_LABEL_Y);
 };
 
 export type FrameSpec = {
@@ -223,23 +254,23 @@ const drawBorder = (ctx: CanvasRenderingContext2D, color: string): void => {
  * 繪製底部時間和狀態指示器
  */
 const drawFooter = async (ctx: CanvasRenderingContext2D, footer: FrameFooter, timeText: string, phaseDeg: number): Promise<void> => {
-	// 時間靠左、footer 狀態圖示靠右，往兩側拉開
+	// 時間靠左、footer 狀態圖示靠右，往兩側拉開（縮小字級與 icon，把空間讓給進度條）
 	ctx.fillStyle = 'white';
-	ctx.font = '26px sans-serif';
+	ctx.font = '18px sans-serif';
 	ctx.textAlign = 'left';
-	ctx.fillText(timeText, 8, 116);
+	ctx.fillText(timeText, 8, FOOTER_TEXT_Y);
 	switch (footer) {
 		case 'terminated':
-			await drawIcon(ctx, ICON_MENU_TO_CLOSE_TRANSITION, '#f87171', 112, 114, 24);
+			await drawIcon(ctx, ICON_MENU_TO_CLOSE_TRANSITION, '#f87171', 118, FOOTER_TEXT_Y - 1, 18);
 			break;
 		case 'succeeded':
-			await drawIcon(ctx, ICON_CHECK, '#4ade80', 114, 116, 22);
+			await drawIcon(ctx, ICON_CHECK, '#4ade80', 120, FOOTER_TEXT_Y, 16);
 			break;
 		case 'refreshing':
-			await drawBreathingIcon(ctx, ICON_ARROW_DOWN, 'white', 114, 116, 22, phaseDeg);
+			await drawBreathingIcon(ctx, ICON_ARROW_DOWN, 'white', 120, FOOTER_TEXT_Y, 16, phaseDeg);
 			break;
 		default:
-			await drawIcon(ctx, ICON_ARROW_DOWN, 'white', 114, 116, 22);
+			await drawIcon(ctx, ICON_ARROW_DOWN, 'white', 120, FOOTER_TEXT_Y, 16);
 			break;
 	}
 };
@@ -279,7 +310,7 @@ export const renderFrame = async (spec: FrameSpec): Promise<string> => {
 	ctx.scale(scale, scale);
 
 	drawTitle(ctx, spec.title);
-	await drawStatusSymbols(ctx, spec.statuses, spec.rotationDeg);
+	drawStatusBar(ctx, spec.statuses, spec.rotationDeg);
 	await drawFooter(ctx, spec.footer, frameCacheTime, spec.rotationDeg);
 
 	ctx.restore();
