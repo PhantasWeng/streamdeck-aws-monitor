@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.1.0] - 2026-07-15
+
+### Bug Fixes
+
+- eliminate zombie animation timers causing button flicker (5a4de18)
+
+### Chores
+
+- remove obsolete AWS Monitor Stream Deck plugin file from releases (a518b37)
+
 ## [1.0.0.0] - 2026-07-09
 
 ### Features
