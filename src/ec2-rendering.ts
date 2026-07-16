@@ -49,11 +49,31 @@ const createButtonCanvas = (): { canvas: Canvas; ctx: CanvasRenderingContext2D }
 	return { canvas, ctx };
 };
 
-const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
-	ctx.fillStyle = 'white';
+const TITLE_DOT_RADIUS = 5;
+const TITLE_DOT_GAP = 8; // 狀態點與名稱之間的間隔
+const TITLE_MAX_TEXT_WIDTH = 106; // 名稱最大寬度（扣掉狀態點與間隔後仍留邊距）
+
+/**
+ * 繪製「狀態點 + 名稱」整組並水平置中：
+ * 狀態點在名稱前方，量測文字寬度後把整組置中。
+ */
+const drawTitleWithState = (ctx: CanvasRenderingContext2D, title: string, state: string): void => {
 	ctx.font = '24px sans-serif bold';
-	ctx.textAlign = 'center';
-	ctx.fillText(title, 72, TITLE_Y, 100); // 右上角留給狀態燈，縮窄避免重疊
+	ctx.textAlign = 'left';
+	const textWidth = Math.min(ctx.measureText(title).width, TITLE_MAX_TEXT_WIDTH);
+	const dotDiameter = TITLE_DOT_RADIUS * 2;
+	const groupWidth = dotDiameter + TITLE_DOT_GAP + textWidth;
+	const groupLeft = (CANVAS_SIZE - groupWidth) / 2;
+
+	// 狀態點（垂直對齊文字中心）
+	ctx.fillStyle = getStateColor(state);
+	ctx.beginPath();
+	ctx.arc(groupLeft + TITLE_DOT_RADIUS, TITLE_Y + 9, TITLE_DOT_RADIUS, 0, Math.PI * 2);
+	ctx.fill();
+
+	// 名稱
+	ctx.fillStyle = 'white';
+	ctx.fillText(title, groupLeft + dotDiameter + TITLE_DOT_GAP, TITLE_Y, TITLE_MAX_TEXT_WIDTH);
 };
 
 const createIconSvg = (paths: IconPathDef[], color: string): Buffer => {
@@ -176,18 +196,6 @@ const getUsageColor = (pct: number): string => {
 		return '#fbbf24';
 	}
 	return '#4ade80';
-};
-
-/**
- * 右上角狀態燈（實心圓，顏色代表 instance 狀態）
- */
-const drawStateDot = (ctx: CanvasRenderingContext2D, state: string): void => {
-	ctx.save();
-	ctx.fillStyle = getStateColor(state);
-	ctx.beginPath();
-	ctx.arc(130, TITLE_Y + 8, 6, 0, Math.PI * 2);
-	ctx.fill();
-	ctx.restore();
 };
 
 /**
@@ -323,8 +331,7 @@ export const renderFrame = async (spec: Ec2FrameSpec): Promise<string> => {
 	ctx.translate(CONTENT_INSET, CONTENT_INSET);
 	ctx.scale(scale, scale);
 
-	drawTitle(ctx, spec.title);
-	drawStateDot(ctx, spec.state);
+	drawTitleWithState(ctx, spec.title, spec.state);
 	if (hasMetrics) {
 		drawMetricRows(ctx, spec.metrics);
 	} else {
