@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0.0] - 2026-07-16
+
+### Features
+
+- add EC2 instance monitor action (83a1035)
+
 ## [1.1.0.0] - 2026-07-15
 
 ### Features
