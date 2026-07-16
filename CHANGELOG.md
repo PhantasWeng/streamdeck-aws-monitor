@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.1.0] - 2026-07-16
+
+### Bug Fixes
+
+- center EC2 title with state dot in front of the name (67cf22a)
+
 ## [1.2.0.0] - 2026-07-16
 
 ### Features
