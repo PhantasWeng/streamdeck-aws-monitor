@@ -368,8 +368,8 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 
 	try {
 		const iconImg = await actionKeyIconPromise;
-		const logoSize = 40;
-		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, TITLE_Y - 4, logoSize, logoSize);
+		const logoSize = 60;
+		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, 6, logoSize, logoSize);
 	} catch (error) {
 		streamDeck.logger.error('Failed to load EC2 action key icon', error);
 	}
@@ -377,7 +377,7 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 	ctx.fillStyle = 'white';
 	ctx.font = '22px sans-serif bold';
 	ctx.textAlign = 'center';
-	ctx.fillText(title, 72, 67, 134);
+	ctx.fillText(title, 72, 78, 134);
 
 	ctx.fillStyle = '#f59e0b';
 	ctx.font = '20px sans-serif bold';

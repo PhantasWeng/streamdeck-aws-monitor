@@ -342,20 +342,20 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 	ctx.translate(CONTENT_INSET, CONTENT_INSET);
 	ctx.scale(scale, scale);
 
-	// 第一行（對齊標題行）：logo 縮小置於最上方
+	// 第一行：logo 置於最上方（放大以更醒目）
 	try {
 		const iconImg = await actionKeyIconPromise;
-		const logoSize = 40;
-		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, TITLE_Y - 4, logoSize, logoSize);
+		const logoSize = 60;
+		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, 6, logoSize, logoSize);
 	} catch (error) {
 		streamDeck.logger.error('Failed to load action key icon', error);
 	}
 
-	// 第二行（對齊中間狀態 icon 行，中心 y=78）：標題
+	// 第二行：標題
 	ctx.fillStyle = 'white';
 	ctx.font = '22px sans-serif bold';
 	ctx.textAlign = 'center';
-	ctx.fillText(title, 72, 67, 134);
+	ctx.fillText(title, 72, 78, 134);
 
 	// 第三行（對齊底部 footer 行 y=116）：未設定狀態文字（簡短，高對比）
 	ctx.fillStyle = '#f59e0b';
