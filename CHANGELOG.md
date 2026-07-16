@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0.0] - 2026-07-16
+
+### Features
+
+- monochrome white AWS icons and larger unconfigured-state logo (db2cc02)
+
 ## [1.2.1.0] - 2026-07-16
 
 ### Bug Fixes
