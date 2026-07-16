@@ -18,6 +18,22 @@
 					"TitleAlignment": "middle"
 				}
 			]
+		},
+		{
+			"Name": "EC2",
+			"UUID": "com.phantas-weng.aws-monitor.ec2",
+			"Icon": "imgs/actions/ec2/icon",
+			"Tooltip": "Displays the status and metrics of an EC2 instance.",
+			"PropertyInspectorPath": "ui/ec2.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/ec2/key",
+					"TitleAlignment": "middle"
+				}
+			]
 		}
 	],
 	"Category": "AWS Monitor",

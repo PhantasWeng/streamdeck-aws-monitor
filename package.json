@@ -28,7 +28,9 @@
         "vitest": "^3.0.0"
     },
     "dependencies": {
+        "@aws-sdk/client-cloudwatch": "^3.858.0",
         "@aws-sdk/client-codepipeline": "^3.858.0",
+        "@aws-sdk/client-ec2": "^3.858.0",
         "@elgato/streamdeck": "^2.1.0",
         "@elgato/utils": "^0.1.0",
         "canvas": "^3.1.2"

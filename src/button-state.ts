@@ -1,7 +1,11 @@
+import type { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import type { CodePipelineClient } from '@aws-sdk/client-codepipeline';
+import type { EC2Client } from '@aws-sdk/client-ec2';
+import type { Ec2Snapshot } from './ec2-metrics';
 import { clearStageStatusTracking, type StageTransitionState } from './transitions';
 
 export type StatusFetcher = () => Promise<string[]>;
+export type Ec2SnapshotFetcher = () => Promise<Ec2Snapshot>;
 
 /**
  * 每個按鈕實例的完整狀態（keyed by action.id），
@@ -18,6 +22,11 @@ export type ButtonState = StageTransitionState & {
 	fetcher?: StatusFetcher;
 	client?: CodePipelineClient;
 	clientKey?: string;
+	// EC2 監控專用：EC2 與 CloudWatch client 各自快取，與 CodePipeline 欄位互不干擾
+	ec2Fetcher?: Ec2SnapshotFetcher;
+	ec2Client?: EC2Client;
+	cwClient?: CloudWatchClient;
+	ec2ClientKey?: string;
 	// onWillDisappear 已釋放此實例；任何跨越 async 邊界（await fetch）
 	// 而殘留的 poll / 動畫鏈都應檢查此旗標並自我終止，避免殭屍計時器
 	disposed?: boolean;
@@ -107,5 +116,7 @@ export const disposeButtonState = (actionId: string): void => {
 	clearLoadingAnimation(state);
 	clearStageStatusTracking(state);
 	state.client?.destroy();
+	state.ec2Client?.destroy();
+	state.cwClient?.destroy();
 	buttonStates.delete(actionId);
 };
