@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0.0] - 2026-07-17
+
+### Features
+
+- generate CI release notes from tag range and guard bump preconditions (332e0d9)
+- add configurable border width for CodePipeline and EC2 buttons (d6e82e0)
+
 ## [1.4.0.0] - 2026-07-17
 
 - No notable changes.
