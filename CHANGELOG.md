@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.0.0] - 2026-07-17
+
+- No notable changes.
+
 ## [1.3.0.0] - 2026-07-16
 
 ### Features
