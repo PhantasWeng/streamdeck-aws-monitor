@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # generate-notes.mjs 需要完整歷史與所有 tags 才能定位前一個 tag 的區間
+          fetch-depth: 0
 
       # canvas 為原生模組，安裝時可能需要從原始碼編譯，先備妥系統相依
       - name: Install canvas build dependencies
@@ -47,11 +50,15 @@ jobs:
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      # 從 CHANGELOG.md 抽出該版本區塊作為 Release note；抽不到則留空由後續 fallback 處理
-      - name: Extract release notes from CHANGELOG
+      # 從 CHANGELOG.md 抽出該版本區塊作為 Release note；
+      # 抽不到則改由「前一個 tag..本 tag」的 git log 直接產生（generate-notes.mjs）
+      - name: Prepare release notes
         id: notes
         run: |
-          node scripts/extract-notes.mjs "${{ steps.version.outputs.value }}" > release-notes.md || true
+          {
+            node scripts/extract-notes.mjs "${{ steps.version.outputs.value }}" > release-notes.md ||
+            node scripts/generate-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
+          } || true
           if [ -s release-notes.md ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else

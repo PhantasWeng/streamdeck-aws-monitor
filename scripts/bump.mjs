@@ -8,6 +8,7 @@ import {
   buildChangelog,
   computeNextVersion,
   groupCommits,
+  parseCommitLines,
   renderChangelogSection,
   replaceManifestVersion,
 } from "./release-lib.mjs";
@@ -60,15 +61,28 @@ const lastVersionTag = () => {
 
 const commitsSince = (tag) => {
   const range = tag ? [`${tag}..HEAD`] : ["HEAD"];
-  const out = capture("git", ["log", ...range, "--no-merges", "--pretty=format:%h%x09%s"]);
-  return out
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [hash, ...rest] = line.split("\t");
-      return { hash, subject: rest.join("\t") };
-    });
+  return parseCommitLines(capture("git", ["log", ...range, "--no-merges", "--pretty=format:%h%x09%s"]));
+};
+
+// 工作區有未 commit 的變更時中止：bump 若先於功能 commit，tag 指到的 commit
+// 不含該變更，release 包與 note 都會漏掉（--force 可略過）
+const assertCleanWorkTree = (force) => {
+  const out = capture("git", ["status", "--porcelain"]).trim();
+  if (!out) {
+    return;
+  }
+  const lines = out.split("\n");
+  const untracked = lines.filter((line) => line.startsWith("??"));
+  const modified = lines.filter((line) => !line.startsWith("??"));
+  if (modified.length > 0 && !force) {
+    console.error("工作區有未 commit 的變更，請先 commit（或 stash）再 bump，否則這些變更不會進入 release：");
+    console.error(modified.map((line) => `  ${line}`).join("\n"));
+    console.error("（確定要略過此檢查請加 --force）");
+    process.exit(1);
+  }
+  if (untracked.length > 0) {
+    console.warn(`注意：${untracked.length} 個未追蹤檔案不會進入 release。`);
+  }
 };
 
 const askBump = async (currentVersion) => {
@@ -93,7 +107,12 @@ const askBump = async (currentVersion) => {
 const main = async () => {
   const argv = process.argv.slice(2);
   const dryRun = argv.includes("--dry-run");
+  const force = argv.includes("--force");
   const positional = argv.filter((a) => !a.startsWith("--"));
+
+  if (!dryRun) {
+    assertCleanWorkTree(force);
+  }
 
   const currentVersion = readManifestVersion();
   const bumpArg = positional[0] ?? (await askBump(currentVersion));
@@ -108,6 +127,13 @@ const main = async () => {
   const lastTag = lastVersionTag();
   const groups = groupCommits(commitsSince(lastTag));
   const section = renderChangelogSection(nextVersion, localDate(), groups);
+
+  // 沒有任何可寫進 note 的 commit → 多半是還沒 commit 就 bump，中止避免發出空 release
+  if (groups.length === 0 && !dryRun && !force) {
+    console.error(`自 ${lastTag ?? "初始 commit"} 以來沒有可寫入 release note 的 commit（note 會是「No notable changes」）。`);
+    console.error("請確認功能已 commit；確定要發佈空版本請加 --force。");
+    process.exit(1);
+  }
 
   if (dryRun) {
     console.log(`[dry-run] ${currentVersion} → ${nextVersion} (tag ${tagName})`);

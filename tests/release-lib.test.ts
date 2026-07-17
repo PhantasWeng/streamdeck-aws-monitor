@@ -5,6 +5,7 @@ import {
 	computeNextVersion,
 	extractVersionSection,
 	groupCommits,
+	parseCommitLines,
 	renderChangelogSection,
 	replaceManifestVersion,
 } from '../scripts/release-lib.mjs';
@@ -70,6 +71,22 @@ describe('groupCommits', () => {
 				{ description: 'B', hash: 'bbb' },
 			] },
 		]);
+	});
+});
+
+describe('parseCommitLines', () => {
+	it('解析 tab 分隔的 hash 與 subject', () => {
+		expect(parseCommitLines('aaa\tfeat: A\nbbb\tfix: B')).toEqual([
+			{ hash: 'aaa', subject: 'feat: A' },
+			{ hash: 'bbb', subject: 'fix: B' },
+		]);
+	});
+	it('空輸入回傳空陣列', () => {
+		expect(parseCommitLines('')).toEqual([]);
+		expect(parseCommitLines('\n\n')).toEqual([]);
+	});
+	it('subject 內的 tab 原樣保留', () => {
+		expect(parseCommitLines('aaa\tfeat: A\tB')).toEqual([{ hash: 'aaa', subject: 'feat: A\tB' }]);
 	});
 });
 

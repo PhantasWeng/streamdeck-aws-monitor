@@ -98,6 +98,21 @@ export const groupCommits = (commits) => {
 };
 
 /**
+ * 解析 `git log --pretty=format:%h%x09%s` 的輸出為 {hash, subject} 陣列。
+ * 空輸入回傳空陣列；subject 內若含 tab 會原樣保留。
+ */
+export const parseCommitLines = (text) => {
+	return text
+		.split('\n')
+		.map(line => line.trim())
+		.filter(Boolean)
+		.map(line => {
+			const [hash, ...rest] = line.split('\t');
+			return { hash, subject: rest.join('\t') };
+		});
+};
+
+/**
  * 產生單一版本的 Keep a Changelog 區塊（結尾含單一換行）。
  */
 export const renderChangelogSection = (version, dateStr, groups) => {
