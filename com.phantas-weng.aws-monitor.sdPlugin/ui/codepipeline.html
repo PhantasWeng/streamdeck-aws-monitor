@@ -20,6 +20,15 @@
       const saveStatus = document.getElementById('saveStatus');
       const displayNameField = document.getElementById('displayName');
       const borderColorField = document.getElementById('borderColor');
+      const borderWidthField = document.getElementById('borderWidth');
+      const borderWidthValue = document.getElementById('borderWidthValue');
+
+      // sdpi-range 值變動時（valuechange 事件在元件本身觸發）同步更新下方顯示
+      const updateBorderWidthLabel = () => {
+        const px = borderWidthField.value || 6;
+        borderWidthValue.innerHTML = `<span class="dim">Currently selected:</span> <strong>${px}px</strong> <span class="dim">(default: 6px)</span>`;
+      };
+      borderWidthField.addEventListener('valuechange', updateBorderWidthLabel);
       const accessKeyField = document.getElementById('AWS_ACCESS_KEY_ID');
       const secretKeyField = document.getElementById('AWS_SECRET_ACCESS_KEY');
       const pipelineNameField = document.getElementById('pipelineName');
@@ -53,6 +62,8 @@
         if (!settings) return;
         setFieldValue(displayNameField, settings.displayName);
         setFieldValue(borderColorField, settings.borderColor);
+        setFieldValue(borderWidthField, settings.borderWidth || 6);
+        updateBorderWidthLabel();
         setFieldValue(accessKeyField, settings.AWS_ACCESS_KEY_ID);
         setFieldValue(secretKeyField, settings.AWS_SECRET_ACCESS_KEY);
         setFieldValue(pipelineNameField, settings.pipelineName);
@@ -65,6 +76,7 @@
       const collectFormSettings = () => ({
         displayName: displayNameField.value?.trim() || '',
         borderColor: borderColorField.value || '',
+        borderWidth: String(borderWidthField.value ?? '').trim() || '6',
         AWS_ACCESS_KEY_ID: accessKeyField.value?.trim() || '',
         AWS_SECRET_ACCESS_KEY: secretKeyField.value?.trim() || '',
         pipelineName: pipelineNameField.value?.trim() || '',
@@ -114,6 +126,14 @@
       <option value="indigo">Indigo</option>
       <option value="violet">Violet</option>
     </sdpi-select>
+  </sdpi-item>
+  <sdpi-item label="Border Width (px)">
+    <sdpi-range id="borderWidth" min="1" max="10" step="1" default="6" showlabels></sdpi-range>
+    <small id="borderWidthValue" style="display:block; margin-top:4px; font-size:12px"></small>
+    <style>
+      #borderWidthValue .dim { opacity: 0.7; }
+      #borderWidthValue strong { font-size: 13px; }
+    </style>
   </sdpi-item>
 
   <sdpi-item label="Access Key ID">

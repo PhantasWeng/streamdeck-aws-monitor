@@ -218,10 +218,11 @@ export type FrameSpec = {
 	footer: FrameFooter;
 	rotationDeg: number;
 	borderColor?: string | null; // 可選：外框顏色 hex，null/undefined 表示不畫框
+	borderWidth?: number; // 可選：外框線寬（px），未給用預設值
 };
 
-// 外框線寬（貼齊按鈕邊緣，不留保留區）
-const BORDER_WIDTH = 6;
+// 外框線寬預設值（貼齊按鈕邊緣，不留保留區）
+const DEFAULT_BORDER_WIDTH = 6;
 // 圓角半徑：貼合 Stream Deck 按鈕本身的圓角，避免四角變形
 const BORDER_RADIUS = 22;
 // 有框線時內容整體等比內縮的邊距（讓標題/icon/footer 不壓到框線）
@@ -230,16 +231,16 @@ const CONTENT_INSET = 12;
 /**
  * 繪製環境識別外框（圓角矩形，貼合按鈕圓角）
  */
-const drawBorder = (ctx: CanvasRenderingContext2D, color: string): void => {
-	const offset = BORDER_WIDTH / 2; // 線寬中心線位置，避免外緣被裁切
+const drawBorder = (ctx: CanvasRenderingContext2D, color: string, borderWidth: number): void => {
+	const offset = borderWidth / 2; // 線寬中心線位置，避免外緣被裁切
 	const x = offset;
 	const y = offset;
-	const w = CANVAS_SIZE - BORDER_WIDTH;
-	const h = CANVAS_SIZE - BORDER_WIDTH;
+	const w = CANVAS_SIZE - borderWidth;
+	const h = CANVAS_SIZE - borderWidth;
 	const r = BORDER_RADIUS;
 
 	ctx.strokeStyle = color;
-	ctx.lineWidth = BORDER_WIDTH;
+	ctx.lineWidth = borderWidth;
 	ctx.beginPath();
 	ctx.moveTo(x + r, y);
 	ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -294,7 +295,8 @@ const getCachedFrame = (key: string): string | undefined => {
  * 繪製 pipeline 狀態畫面，回傳 base64 data URL（有快取）
  */
 export const renderFrame = async (spec: FrameSpec): Promise<string> => {
-	const key = `${spec.title}|${spec.statuses.join(',')}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}`;
+	const borderWidth = spec.borderWidth ?? DEFAULT_BORDER_WIDTH;
+	const key = `${spec.title}|${spec.statuses.join(',')}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}|${borderWidth}`;
 	const cached = getCachedFrame(key);
 	if (cached) {
 		return cached;
@@ -316,7 +318,7 @@ export const renderFrame = async (spec: FrameSpec): Promise<string> => {
 	ctx.restore();
 
 	if (spec.borderColor) {
-		drawBorder(ctx, spec.borderColor);
+		drawBorder(ctx, spec.borderColor, borderWidth);
 	}
 
 	const dataUrl = canvas.toDataURL();

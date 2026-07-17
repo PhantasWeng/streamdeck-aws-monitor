@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
 	type CodePipelineMonitorSettings,
 	DEFAULT_POLLING_MAX_MINUTES,
+	DEFAULT_BORDER_WIDTH,
 	getAwsConsoleUrl,
 	getBorderColorHex,
+	getBorderWidth,
 	getButtonTitle,
+	MAX_BORDER_WIDTH,
 	getCloudWatchLogGroupUrl,
 	getDebugStageCount,
 	getLogRegion,
@@ -138,6 +141,26 @@ describe('getBorderColorHex', () => {
 		expect(getBorderColorHex(baseSettings)).toBeNull();
 		expect(getBorderColorHex({ ...baseSettings, borderColor: '' })).toBeNull();
 		expect(getBorderColorHex({ ...baseSettings, borderColor: 'rainbow' })).toBeNull();
+	});
+});
+
+describe('getBorderWidth', () => {
+	it('有效數值（含字串）四捨五入回傳', () => {
+		expect(getBorderWidth({ ...baseSettings, borderWidth: 3 })).toBe(3);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: '8' })).toBe(8);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: 4.6 })).toBe(5);
+	});
+
+	it('未填或無效值回傳預設值', () => {
+		expect(getBorderWidth(baseSettings)).toBe(DEFAULT_BORDER_WIDTH);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: '' })).toBe(DEFAULT_BORDER_WIDTH);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: 'abc' })).toBe(DEFAULT_BORDER_WIDTH);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: 0 })).toBe(DEFAULT_BORDER_WIDTH);
+		expect(getBorderWidth({ ...baseSettings, borderWidth: -5 })).toBe(DEFAULT_BORDER_WIDTH);
+	});
+
+	it('超過上限夾到 MAX_BORDER_WIDTH', () => {
+		expect(getBorderWidth({ ...baseSettings, borderWidth: 99 })).toBe(MAX_BORDER_WIDTH);
 	});
 });
 

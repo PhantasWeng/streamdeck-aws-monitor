@@ -1,7 +1,7 @@
 /**
  * Ec2Monitor 的設定型別與純函式工具
  */
-import { BORDER_COLORS } from './settings';
+import { BORDER_COLORS, resolveBorderWidth } from './settings';
 
 export type Ec2MonitorSettings = {
 	AWS_ACCESS_KEY_ID: string;
@@ -10,6 +10,7 @@ export type Ec2MonitorSettings = {
 	instanceId: string;
 	displayName?: string;
 	borderColor?: string; // 可選：外框顏色代號（red/orange/yellow/green/blue/indigo/violet）
+	borderWidth?: number | string; // 可選：外框線寬（px），未填用預設值
 };
 
 // instanceId 設為此值即進入模擬模式（不需要 AWS 憑證）
@@ -43,6 +44,12 @@ export const getButtonTitle = (settings: Ec2MonitorSettings): string =>
  */
 export const getBorderColorHex = (settings: Ec2MonitorSettings): string | null =>
 	BORDER_COLORS[settings.borderColor?.trim().toLowerCase() ?? ''] ?? null;
+
+/**
+ * 取得外框線寬（px）
+ */
+export const getBorderWidth = (settings: Ec2MonitorSettings): number =>
+	resolveBorderWidth(settings.borderWidth);
 
 /**
  * 檢查必填設定是否完整

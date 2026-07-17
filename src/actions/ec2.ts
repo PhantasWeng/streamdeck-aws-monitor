@@ -24,6 +24,7 @@ import {
 	type Ec2MonitorSettings,
 	getAwsConsoleUrl,
 	getBorderColorHex,
+	getBorderWidth,
 	getButtonTitle,
 	getCloudWatchUrl,
 	hasRequiredSettings,
@@ -200,6 +201,7 @@ const pollOnce = async (ev: ButtonEvent, settings: Ec2MonitorSettings, intervals
 					footer: deriveFooter(snapshot.state, snapshot.statusCheck),
 					rotationDeg: state.loadingAngle ?? 0,
 					borderColor: getBorderColorHex(settings),
+					borderWidth: getBorderWidth(settings),
 				})
 			);
 		};

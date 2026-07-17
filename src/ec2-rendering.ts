@@ -29,7 +29,7 @@ const METRIC_BAR_HEIGHT = 12;
 const FOOTER_TEXT_Y = 124;
 
 // 外框（與 CodePipeline 一致）
-const BORDER_WIDTH = 6;
+const DEFAULT_BORDER_WIDTH = 6;
 const BORDER_RADIUS = 22;
 const CONTENT_INSET = 12;
 
@@ -150,13 +150,13 @@ const fillRoundedRect = (
 	ctx.fill();
 };
 
-const drawBorder = (ctx: CanvasRenderingContext2D, color: string): void => {
-	const offset = BORDER_WIDTH / 2;
-	const w = CANVAS_SIZE - BORDER_WIDTH;
-	const h = CANVAS_SIZE - BORDER_WIDTH;
+const drawBorder = (ctx: CanvasRenderingContext2D, color: string, borderWidth: number): void => {
+	const offset = borderWidth / 2;
+	const w = CANVAS_SIZE - borderWidth;
+	const h = CANVAS_SIZE - borderWidth;
 	const r = BORDER_RADIUS;
 	ctx.strokeStyle = color;
-	ctx.lineWidth = BORDER_WIDTH;
+	ctx.lineWidth = borderWidth;
 	ctx.beginPath();
 	ctx.moveTo(offset + r, offset);
 	ctx.arcTo(offset + w, offset, offset + w, offset + h, r);
@@ -295,6 +295,7 @@ export type Ec2FrameSpec = {
 	footer: Ec2Footer;
 	rotationDeg: number;
 	borderColor?: string | null;
+	borderWidth?: number; // 可選：外框線寬（px），未給用預設值
 };
 
 // 幀快取：與 CodePipeline 相同策略，唯一隨時間變動的是 HH:mm，
@@ -319,7 +320,8 @@ const metricsKey = (metrics: Ec2Metrics): string => `${metrics.cpu ?? ''},${metr
  */
 export const renderFrame = async (spec: Ec2FrameSpec): Promise<string> => {
 	const hasMetrics = availableMetrics(spec.metrics).length > 0;
-	const key = `${spec.title}|${spec.state}|${metricsKey(spec.metrics)}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}`;
+	const borderWidth = spec.borderWidth ?? DEFAULT_BORDER_WIDTH;
+	const key = `${spec.title}|${spec.state}|${metricsKey(spec.metrics)}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}|${borderWidth}`;
 	const cached = getCachedFrame(key);
 	if (cached) {
 		return cached;
@@ -342,7 +344,7 @@ export const renderFrame = async (spec: Ec2FrameSpec): Promise<string> => {
 	ctx.restore();
 
 	if (spec.borderColor) {
-		drawBorder(ctx, spec.borderColor);
+		drawBorder(ctx, spec.borderColor, borderWidth);
 	}
 
 	const dataUrl = canvas.toDataURL();

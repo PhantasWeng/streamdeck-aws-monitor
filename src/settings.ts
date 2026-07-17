@@ -12,12 +12,16 @@ export type CodePipelineMonitorSettings = {
 	displayName?: string;
 	logGroupName?: string; // 可選：CloudWatch Log Group 名稱
 	borderColor?: string; // 可選：外框顏色代號（red/orange/yellow/green/blue/indigo/violet）
+	borderWidth?: number | string; // 可選：外框線寬（px），未填用預設值
 };
 
 export const DEBUG_PIPELINE_NAME = 'debug';
 // debug 或 debug:N（N = 模擬 stage 數）
 const DEBUG_PIPELINE_NAME_PATTERN = /^debug(?::(\d+))?$/;
 export const DEFAULT_POLLING_MAX_MINUTES = 30;
+// 外框線寬預設值與上限（px）；上限小於內容內縮邊距（12），避免框線壓到內容
+export const DEFAULT_BORDER_WIDTH = 6;
+export const MAX_BORDER_WIDTH = 10;
 
 // 外框顏色代號 → hex 對應表（紅橙黃綠藍靛紫）
 export const BORDER_COLORS: Record<string, string> = {
@@ -92,6 +96,25 @@ export const getButtonTitle = (settings: CodePipelineMonitorSettings): string =>
  */
 export const getBorderColorHex = (settings: CodePipelineMonitorSettings): string | null =>
 	BORDER_COLORS[settings.borderColor?.trim().toLowerCase() ?? ''] ?? null;
+
+/**
+ * 將任意外框線寬輸入正規化為 px：未填或無效值回傳預設值，
+ * 並夾在 1–MAX_BORDER_WIDTH 之間（四捨五入為整數，避免非整數線寬造成邊緣模糊）。
+ * CodePipeline 與 EC2 兩個 action 共用此邏輯。
+ */
+export const resolveBorderWidth = (value: number | string | undefined): number => {
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return DEFAULT_BORDER_WIDTH;
+	}
+	return Math.min(MAX_BORDER_WIDTH, Math.max(1, Math.round(parsed)));
+};
+
+/**
+ * 取得外框線寬（px）
+ */
+export const getBorderWidth = (settings: CodePipelineMonitorSettings): number =>
+	resolveBorderWidth(settings.borderWidth);
 
 /**
  * 檢查必填設定是否完整（不包含 logGroupName）
