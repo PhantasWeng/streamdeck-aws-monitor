@@ -9,6 +9,10 @@ It renders stage-by-stage deployment status directly on the key, colors each key
 
 ## Screenshots
 
+![AWS Monitor in use on Stream Deck MK.2](assets/aws-monitor-plugin-promo-scene-mk2.png)
+
+*AWS Monitor running on a Stream Deck MK.2 with CodePipeline and EC2 status keys in an AWS monitoring workspace.*
+
 ![Key states overview](docs/images/key-states/overview.png)
 
 _Key states: `Not Configured` → `Loading` → `Partially Complete` → `Fully Complete`._
