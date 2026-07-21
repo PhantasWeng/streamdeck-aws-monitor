@@ -16,9 +16,13 @@ Both render status directly on the key, color each key by environment, and offer
 
 *AWS Monitor running on a Stream Deck MK.2 with CodePipeline and EC2 status keys in an AWS monitoring workspace.*
 
-![Key states overview](docs/images/key-states/overview.png)
+![CodePipeline key states overview](docs/images/key-states/overview.png)
 
 _CodePipeline key states: `Not Configured` → `Loading` → `Partially Complete` → `Fully Complete`._
+
+![EC2 key states overview](docs/images/key-states/ec2-overview.png)
+
+_EC2 key states: `Not Configured`, `Running` (CPU / memory / disk usage, color-coded by threshold), `CPU Only` (no CloudWatch Agent), and `Stopped`._
 
 ## Why This Plugin
 
@@ -263,7 +267,7 @@ yarn build
 yarn screenshots:key-states
 ```
 
-Regenerates `docs/images/key-states/*.png`, including `overview.png` and `border-colors.png`.
+Regenerates `docs/images/key-states/*.png`, including `overview.png`, `ec2-overview.png`, and `border-colors.png`.
 
 ## Troubleshooting
 

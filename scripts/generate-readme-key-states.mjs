@@ -14,6 +14,9 @@ const actionKeyIconPath = path.resolve(
 // Keep these definitions aligned with src/rendering.ts
 const ICON_CHECK = [{ d: "M5 11l6 6l10-10" }];
 const ICON_ARROW_DOWN = [{ d: "M12 5v12" }, { d: "M7 13l5 5l5-5" }];
+// EC2 footer 額外圖示（對齊 src/ec2-rendering.ts）
+const ICON_CLOSE = [{ d: "M6 6l12 12" }, { d: "M18 6l-12 12" }];
+const ICON_PAUSE = [{ d: "M9 6v12" }, { d: "M15 6v12" }];
 
 const CANVAS_SIZE = 144;
 const TITLE_Y = 16;
@@ -418,6 +421,257 @@ const buildBorderColors = async () => {
   return canvas.toBuffer("image/png");
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// EC2 按鈕渲染（對齊 src/ec2-rendering.ts + src/ec2-metrics.ts）
+// ─────────────────────────────────────────────────────────────────────────
+
+const ec2ActionKeyIconPath = path.resolve(
+  rootDir,
+  "com.phantas-weng.aws-monitor.sdPlugin/imgs/actions/ec2/key@2x.png"
+);
+
+// 指標列排版
+const EC2_ROWS_TOP = 44;
+const EC2_ROWS_BOTTOM = 112;
+const EC2_METRIC_LABEL_X = 6;
+const EC2_METRIC_BAR_X = 46;
+const EC2_METRIC_BAR_RIGHT = 98;
+const EC2_METRIC_PERCENT_X = 104;
+const EC2_METRIC_BAR_HEIGHT = 12;
+
+// 標題狀態點
+const EC2_TITLE_DOT_RADIUS = 5;
+const EC2_TITLE_DOT_GAP = 8;
+const EC2_TITLE_MAX_TEXT_WIDTH = 106;
+
+// 指標顯示順序與標籤
+const EC2_METRIC_ORDER = [
+  { key: "cpu", label: "CPU" },
+  { key: "mem", label: "MEM" },
+  { key: "disk", label: "DSK" }
+];
+
+const hasMetric = (value) => typeof value === "number" && Number.isFinite(value);
+
+const availableMetrics = (metrics) =>
+  EC2_METRIC_ORDER.filter(({ key }) => hasMetric(metrics[key])).map(({ key, label }) => ({
+    key,
+    label,
+    value: metrics[key]
+  }));
+
+const classifyInstanceState = (state) => {
+  switch (state) {
+    case "pending":
+    case "stopping":
+    case "shutting-down":
+      return "transitioning";
+    case "running":
+      return "running";
+    case "stopped":
+      return "stopped";
+    case "terminated":
+      return "terminated";
+    default:
+      return "unknown";
+  }
+};
+
+const getEc2StateColor = (state) => {
+  switch (classifyInstanceState(state)) {
+    case "running":
+      return "#4ade80";
+    case "transitioning":
+      return "#60a5fa";
+    case "stopped":
+      return "#9ca3af";
+    case "terminated":
+      return "#f87171";
+    default:
+      return "#9ca3af";
+  }
+};
+
+const getUsageColor = (pct) => {
+  if (pct >= 90) return "#f87171";
+  if (pct >= 70) return "#fbbf24";
+  return "#4ade80";
+};
+
+const drawTitleWithState = (ctx, title, state) => {
+  ctx.font = "24px sans-serif bold";
+  ctx.textAlign = "left";
+  const textWidth = Math.min(ctx.measureText(title).width, EC2_TITLE_MAX_TEXT_WIDTH);
+  const dotDiameter = EC2_TITLE_DOT_RADIUS * 2;
+  const groupWidth = dotDiameter + EC2_TITLE_DOT_GAP + textWidth;
+  const groupLeft = (CANVAS_SIZE - groupWidth) / 2;
+
+  ctx.fillStyle = getEc2StateColor(state);
+  ctx.beginPath();
+  ctx.arc(groupLeft + EC2_TITLE_DOT_RADIUS, TITLE_Y + 9, EC2_TITLE_DOT_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "white";
+  ctx.fillText(title, groupLeft + dotDiameter + EC2_TITLE_DOT_GAP, TITLE_Y, EC2_TITLE_MAX_TEXT_WIDTH);
+};
+
+const drawMetricRows = (ctx, metrics) => {
+  const rows = availableMetrics(metrics);
+  if (rows.length === 0) {
+    return;
+  }
+
+  const slot = (EC2_ROWS_BOTTOM - EC2_ROWS_TOP) / rows.length;
+  const barWidth = EC2_METRIC_BAR_RIGHT - EC2_METRIC_BAR_X;
+
+  rows.forEach((row, index) => {
+    const cy = EC2_ROWS_TOP + slot * (index + 0.5);
+    const textY = cy - 9;
+
+    ctx.fillStyle = "white";
+    ctx.font = "17px sans-serif bold";
+    ctx.textAlign = "left";
+    ctx.fillText(row.label, EC2_METRIC_LABEL_X, textY);
+
+    const barTop = cy - EC2_METRIC_BAR_HEIGHT / 2;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    fillRoundedRect(ctx, EC2_METRIC_BAR_X, barTop, barWidth, EC2_METRIC_BAR_HEIGHT, 4);
+    const fillWidth = Math.max(0, Math.min(1, row.value / 100)) * barWidth;
+    if (fillWidth > 0) {
+      ctx.fillStyle = getUsageColor(row.value);
+      fillRoundedRect(ctx, EC2_METRIC_BAR_X, barTop, Math.max(fillWidth, 4), EC2_METRIC_BAR_HEIGHT, 4);
+    }
+
+    ctx.fillStyle = "white";
+    ctx.font = "17px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(`${row.value}%`, EC2_METRIC_PERCENT_X, textY);
+  });
+};
+
+const drawStateLabel = (ctx, state, rotationDeg) => {
+  const cls = classifyInstanceState(state);
+  ctx.save();
+  if (cls === "transitioning") {
+    const wave = Math.sin((rotationDeg * Math.PI) / 180);
+    ctx.globalAlpha = 0.5 + 0.5 * ((wave + 1) / 2);
+  }
+  ctx.fillStyle = getEc2StateColor(state);
+  ctx.font = "26px sans-serif bold";
+  ctx.textAlign = "center";
+  ctx.fillText(state.toUpperCase(), 72, 66, 132);
+  ctx.restore();
+};
+
+const drawEc2Footer = async (ctx, footer, phaseDeg) => {
+  ctx.fillStyle = "white";
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(formatTime(), 8, FOOTER_TEXT_Y);
+  switch (footer) {
+    case "healthy":
+      await drawIcon(ctx, ICON_CHECK, "#4ade80", 120, FOOTER_TEXT_Y, 16);
+      break;
+    case "impaired":
+    case "terminated":
+      await drawIcon(ctx, ICON_CLOSE, "#f87171", 118, FOOTER_TEXT_Y - 1, 18);
+      break;
+    case "stopped":
+      await drawIcon(ctx, ICON_PAUSE, "#9ca3af", 120, FOOTER_TEXT_Y, 16);
+      break;
+    case "transitioning":
+      await drawBreathingIcon(ctx, ICON_ARROW_DOWN, "white", 120, FOOTER_TEXT_Y, 16, phaseDeg);
+      break;
+    default:
+      await drawIcon(ctx, ICON_ARROW_DOWN, "#9ca3af", 120, FOOTER_TEXT_Y, 16);
+      break;
+  }
+};
+
+// 內容一律等比內縮（對齊 src/ec2-rendering.ts），框線僅額外疊加
+const renderEc2Frame = async (
+  { title, state, metrics, footer, rotationDeg = 0, borderColor = null } = {}
+) => {
+  const { canvas, ctx } = createButtonCanvas();
+  const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+  ctx.save();
+  ctx.translate(CONTENT_INSET, CONTENT_INSET);
+  ctx.scale(scale, scale);
+
+  drawTitleWithState(ctx, title, state);
+  if (availableMetrics(metrics).length > 0) {
+    drawMetricRows(ctx, metrics);
+  } else {
+    drawStateLabel(ctx, state, rotationDeg);
+  }
+  await drawEc2Footer(ctx, footer, rotationDeg);
+
+  ctx.restore();
+
+  if (borderColor) {
+    drawBorder(ctx, borderColor);
+  }
+
+  return canvas.toBuffer("image/png");
+};
+
+const renderEc2NotConfiguredFrame = async (title) => {
+  const { canvas, ctx } = createButtonCanvas();
+  const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
+  ctx.save();
+  ctx.translate(CONTENT_INSET, CONTENT_INSET);
+  ctx.scale(scale, scale);
+
+  const iconImg = await loadImage(ec2ActionKeyIconPath);
+  const logoSize = 60;
+  ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, 6, logoSize, logoSize);
+
+  ctx.fillStyle = "white";
+  ctx.font = "22px sans-serif bold";
+  ctx.textAlign = "center";
+  ctx.fillText(title, 72, 78, 134);
+
+  ctx.fillStyle = "#f59e0b";
+  ctx.font = "20px sans-serif bold";
+  ctx.textAlign = "center";
+  ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
+
+  ctx.restore();
+
+  return canvas.toBuffer("image/png");
+};
+
+const buildEc2Overview = async () => {
+  const startX = 28;
+  const gap = 20;
+  const slotW = 261;
+  const slotH = 248;
+  const imageInset = 13;
+  const topY = 28;
+  const labelToKeyGap = 48;
+  const cardW = startX * 2 + slotW * 4 + gap * 3;
+  const cardH = topY + labelToKeyGap + slotH + 24;
+  const canvas = createCanvas(cardW, cardH);
+  const ctx = canvas.getContext("2d");
+  drawPanel(ctx, cardW, cardH);
+
+  const labels = ["Not Configured", "Running", "CPU Only", "Stopped"];
+  const files = ["ec2-not-configured.png", "ec2-running.png", "ec2-cpu-only.png", "ec2-stopped.png"];
+
+  for (let i = 0; i < 4; i += 1) {
+    const x = startX + i * (slotW + gap);
+
+    ctx.fillStyle = "#dadce5";
+    ctx.textAlign = "center";
+    ctx.font = "600 32px sans-serif";
+    ctx.fillText(labels[i], x + slotW / 2, topY + 4);
+
+    await drawKeyInShell(ctx, path.resolve(outputDir, files[i]), x, topY + labelToKeyGap, slotW, slotH, imageInset);
+  }
+
+  return canvas.toBuffer("image/png");
+};
+
 const main = async () => {
   mkdirSync(outputDir, { recursive: true });
 
@@ -448,6 +702,37 @@ const main = async () => {
   writePng("not-configured.png", await renderNotConfiguredFrame("CodePipeline"));
   writePng("overview.png", await buildOverview());
   writePng("border-colors.png", await buildBorderColors());
+
+  // EC2 各狀態範例（含指標）＋總覽
+  writePng("ec2-not-configured.png", await renderEc2NotConfiguredFrame("EC2"));
+  writePng(
+    "ec2-running.png",
+    await renderEc2Frame({
+      title: "web-01",
+      state: "running",
+      metrics: { cpu: 34, mem: 78, disk: 92 },
+      footer: "healthy"
+    })
+  );
+  writePng(
+    "ec2-cpu-only.png",
+    await renderEc2Frame({
+      title: "db-01",
+      state: "running",
+      metrics: { cpu: 61 },
+      footer: "healthy"
+    })
+  );
+  writePng(
+    "ec2-stopped.png",
+    await renderEc2Frame({
+      title: "batch",
+      state: "stopped",
+      metrics: {},
+      footer: "stopped"
+    })
+  );
+  writePng("ec2-overview.png", await buildEc2Overview());
 };
 
 await main();
