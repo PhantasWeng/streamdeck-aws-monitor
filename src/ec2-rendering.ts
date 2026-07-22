@@ -1,5 +1,6 @@
 import streamDeck from '@elgato/streamdeck';
-import { type Canvas, type CanvasRenderingContext2D, createCanvas, type Image, loadImage } from 'canvas';
+// 使用 @napi-rs/canvas 的 node-canvas 相容層（跨平台靜態連結 binary，見 scripts/copy-canvas.mjs）
+import { type Canvas, type CanvasRenderingContext2D, createCanvas, type Image, loadImage } from '@napi-rs/canvas/node-canvas.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availableMetrics, classifyInstanceState, type Ec2Footer, type Ec2Metrics } from './ec2-metrics';
@@ -58,7 +59,7 @@ const TITLE_MAX_TEXT_WIDTH = 106; // 名稱最大寬度（扣掉狀態點與間�
  * 狀態點在名稱前方，量測文字寬度後把整組置中。
  */
 const drawTitleWithState = (ctx: CanvasRenderingContext2D, title: string, state: string): void => {
-	ctx.font = '24px sans-serif bold';
+	ctx.font = 'bold 24px sans-serif';
 	ctx.textAlign = 'left';
 	const textWidth = Math.min(ctx.measureText(title).width, TITLE_MAX_TEXT_WIDTH);
 	const dotDiameter = TITLE_DOT_RADIUS * 2;
@@ -216,7 +217,7 @@ const drawMetricRows = (ctx: CanvasRenderingContext2D, metrics: Ec2Metrics): voi
 		const textY = cy - 9;
 
 		ctx.fillStyle = 'white';
-		ctx.font = '17px sans-serif bold';
+		ctx.font = 'bold 17px sans-serif';
 		ctx.textAlign = 'left';
 		ctx.fillText(row.label, METRIC_LABEL_X, textY);
 
@@ -250,7 +251,7 @@ const drawStateLabel = (ctx: CanvasRenderingContext2D, state: string, rotationDe
 		ctx.globalAlpha = 0.5 + 0.5 * ((wave + 1) / 2);
 	}
 	ctx.fillStyle = getStateColor(state);
-	ctx.font = '26px sans-serif bold';
+	ctx.font = 'bold 26px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(state.toUpperCase(), 72, 66, 132);
 	ctx.restore();
@@ -377,12 +378,12 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 	}
 
 	ctx.fillStyle = 'white';
-	ctx.font = '22px sans-serif bold';
+	ctx.font = 'bold 22px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(title, 72, 78, 134);
 
 	ctx.fillStyle = '#f59e0b';
-	ctx.font = '20px sans-serif bold';
+	ctx.font = 'bold 20px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
 

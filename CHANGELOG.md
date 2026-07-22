@@ -2,12 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
-## [1.5.0.0] - 2026-07-17
+## [1.5.0.0] - 2026-07-22
+
+### Bug Fixes
+
+- ship canvas binaries in the package so the plugin runs on clean installs (3feadfe)
 
 ### Features
 
 - generate CI release notes from tag range and guard bump preconditions (332e0d9)
 - add configurable border width for CodePipeline and EC2 buttons (d6e82e0)
+
+### Documentation
+
+- add EC2 key-states screenshot to README (9f5c644)
+- document EC2 action and fix README inaccuracies (f0fd5b3)
+- add Stream Deck promo scene (074fac5)
 
 ## [1.4.0.0] - 2026-07-17
 

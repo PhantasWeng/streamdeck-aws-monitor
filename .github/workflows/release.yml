@@ -20,18 +20,8 @@ jobs:
           # generate-notes.mjs 需要完整歷史與所有 tags 才能定位前一個 tag 的區間
           fetch-depth: 0
 
-      # canvas 為原生模組，安裝時可能需要從原始碼編譯，先備妥系統相依
-      - name: Install canvas build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            pkg-config \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libjpeg-dev \
-            libgif-dev \
-            librsvg2-dev
+      # 改用 @napi-rs/canvas（靜態連結預編譯 binary），不需系統函式庫或原始碼編譯。
+      # 各平台 binary 由 scripts/copy-canvas.mjs 於封裝前抓取並打包（見下方 Bundle canvas 步驟）。
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -67,6 +57,11 @@ jobs:
 
       - name: Build bundle
         run: yarn build:bundle
+
+      # 將 @napi-rs/canvas 與各平台 binary（macOS arm64/x64、Windows x64）
+      # 複製進外掛 node_modules，讓封裝包自帶 canvas 而不依賴使用者環境。
+      - name: Bundle canvas into plugin
+        run: node scripts/copy-canvas.mjs
 
       - name: Pack plugin
         run: |

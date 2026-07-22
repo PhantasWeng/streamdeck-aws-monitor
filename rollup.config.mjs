@@ -21,7 +21,9 @@ const config = {
 			return url.pathToFileURL(path.resolve(path.dirname(sourcemapPath), relativeSourcePath)).href;
 		}
 	},
-	external: ['canvas'],
+	// @napi-rs/canvas（含 /node-canvas 相容層）維持 external：其 loader 會動態 require
+	// 各平台的 skia.*.node，不能被打包器改寫；binary 由 scripts/copy-canvas.mjs 複製進外掛。
+	external: [/^@napi-rs\/canvas(\/|$)/],
 	plugins: [
 		{
 			name: "watch-externals",

@@ -39,7 +39,7 @@ yarn screenshots:key-states  # Generate README screenshots of button key states
 
 This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
-**Tech Stack**: TypeScript, Elgato Stream Deck SDK v2.0.2, AWS SDK v3, node-canvas, Rollup, Vitest, Biome
+**Tech Stack**: TypeScript, Elgato Stream Deck SDK v2.0.2, AWS SDK v3, @napi-rs/canvas (prebuilt, statically-linked; node-canvas compat entry), Rollup, Vitest, Biome
 
 **Entry Point**: `src/plugin.ts` — registers the `CodePipelineMonitor` action and connects to Stream Deck. Logger level is `info` in production; bump to `debug`/`trace` temporarily when debugging.
 
@@ -49,7 +49,7 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 - `button-state.ts` — per-button `ButtonState` in a single `Map<actionId, ButtonState>` (timers, loading animation, cached AWS client). `disposeButtonState()` cleans everything at once on `onWillDisappear`.
 - `transitions.ts` — stage-status-change tracking with brief "TransitionLoading" overlay (300ms), unit-tested
 - `polling.ts` — pure poll-cadence logic: `isLoadingStatus`, `classifyPoll` (active/settled/terminated + `pollingStartedAt` bookkeeping), `deriveFooter`, `FrameFooter` type. Unit-tested, no canvas/AWS deps.
-- `rendering.ts` — node-canvas drawing (144×144): stage 狀態畫成分段進度條（每段依狀態上色，任意 stage 數自動均分，下方顯示「完成數/總數」），footer 用 Iconify line-md SVG 圖示 + full-frame data-URL cache
+- `rendering.ts` — @napi-rs/canvas drawing (144×144): stage 狀態畫成分段進度條（每段依狀態上色，任意 stage 數自動均分，下方顯示「完成數/總數」），footer 用 Iconify line-md SVG 圖示 + full-frame data-URL cache
 - `aws.ts` — CodePipeline client (cached per button, credentials passed directly — never via `process.env`) and stage-status fetch
 - `debug.ts` — simulated 3-stage pipeline fetcher for debug mode
 
@@ -65,7 +65,9 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 ## Key Implementation Details
 
-**Canvas rendering**: `canvas` is marked `external` in `rollup.config.mjs` because the Stream Deck Node.js runtime provides it. All button images are drawn via `createCanvas(144, 144)` and sent as base64 data URLs via `ev.action.setImage()`.
+**Canvas rendering**: uses `@napi-rs/canvas` via its node-canvas compat entry (`@napi-rs/canvas/node-canvas.js` — keeps the `CanvasRenderingContext2D` type name). Its prebuilt `.node` binaries are **statically linked** (no external Cairo/Pango DLLs), so packaging just needs the right `skia.*.node` per platform. All button images are drawn via `createCanvas(144, 144)` and sent as base64 data URLs via `ev.action.setImage()`.
+
+**Canvas packaging (IMPORTANT — do not regress)**: `@napi-rs/canvas` is `external` in `rollup.config.mjs` (its loader dynamically `require`s the platform `.node`, which a bundler must not rewrite). The Stream Deck runtime does **NOT** provide `canvas` — nothing does automatically. `scripts/copy-canvas.mjs` copies the loader + all target-platform binaries (macOS arm64/x64, Windows x64 — Windows-on-ARM is intentionally omitted; adjust `TARGETS` to change) into `com.phantas-weng.aws-monitor.sdPlugin/node_modules/@napi-rs/canvas/` before packing, so the `.streamDeckPlugin` is self-contained. Run in both `scripts/build.mjs` (local) and the CI "Bundle canvas into plugin" step (before `streamdeck pack`). Without this copy the packed plugin crashes on every clean install with `ERR_MODULE_NOT_FOUND` — it only "worked" on the dev machine because the install symlink lets Node resolve up into the repo's `node_modules`. This was the historical Windows-crash bug (the previous `canvas`/node-canvas build was never shipped in the package). `@napi-rs/canvas` is version-pinned (exact) so the copied loader JS matches the fetched binaries.
 
 **Frame cache**: the loading animation phase advances in 24° steps (15 distinct frames — drives the in-progress segments' pulse and the footer breathing arrow) and the only other time-varying element is the `HH:mm` footer text, so `rendering.ts` caches complete frame data URLs keyed by `(title, statuses, footer, rotation)` and invalidates the cache when the minute changes. This avoids re-drawing/PNG-encoding at 10 FPS.
 

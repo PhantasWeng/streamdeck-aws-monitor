@@ -1,5 +1,7 @@
 import streamDeck from '@elgato/streamdeck';
-import { createCanvas, type Canvas, type CanvasRenderingContext2D, loadImage, type Image } from 'canvas';
+// 使用 @napi-rs/canvas 的 node-canvas 相容層：其 .node 為靜態連結（免系統 DLL），
+// 且各平台預編譯 binary 由 scripts/copy-canvas.mjs 打包進外掛，跨 macOS/Windows 皆可用。
+import { createCanvas, type Canvas, type CanvasRenderingContext2D, loadImage, type Image } from '@napi-rs/canvas/node-canvas.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type FrameFooter, isLoadingStatus } from './polling';
@@ -69,7 +71,7 @@ const createButtonCanvas = (): { canvas: Canvas; ctx: CanvasRenderingContext2D }
  */
 const drawTitle = (ctx: CanvasRenderingContext2D, title: string): void => {
 	ctx.fillStyle = 'white';
-	ctx.font = '24px sans-serif bold';
+	ctx.font = 'bold 24px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(title, 72, TITLE_Y, 134);
 };
@@ -355,13 +357,13 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 
 	// 第二行：標題
 	ctx.fillStyle = 'white';
-	ctx.font = '22px sans-serif bold';
+	ctx.font = 'bold 22px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(title, 72, 78, 134);
 
 	// 第三行（對齊底部 footer 行 y=116）：未設定狀態文字（簡短，高對比）
 	ctx.fillStyle = '#f59e0b';
-	ctx.font = '20px sans-serif bold';
+	ctx.font = 'bold 20px sans-serif';
 	ctx.textAlign = 'center';
 	ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
 

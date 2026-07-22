@@ -31,6 +31,10 @@ const readCurrentPluginVersion = () => {
 const main = async () => {
   run("yarn", ["build:bundle"]);
 
+  // canvas 為 external：把 @napi-rs/canvas 及各平台 binary 複製進外掛 node_modules，
+  // 否則封裝出的 .streamDeckPlugin 在乾淨安裝時會 ERR_MODULE_NOT_FOUND 崩潰。
+  run("node", ["scripts/copy-canvas.mjs"]);
+
   const version = readCurrentPluginVersion();
 
   if (!existsSync(releaseDir)) {
