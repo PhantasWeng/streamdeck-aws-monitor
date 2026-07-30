@@ -2,10 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
-## [1.5.0.0] - 2026-07-22
+## [1.5.0.0] - 2026-07-30
 
 ### Bug Fixes
 
+- stop unhandled promise rejections from killing the plugin process (cf078e9)
 - ship canvas binaries in the package so the plugin runs on clean installs (3feadfe)
 
 ### Features
