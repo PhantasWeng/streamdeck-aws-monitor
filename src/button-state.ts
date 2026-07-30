@@ -1,6 +1,7 @@
 import type { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import type { CodePipelineClient } from '@aws-sdk/client-codepipeline';
 import type { EC2Client } from '@aws-sdk/client-ec2';
+import { detach } from './async-guard';
 import type { Ec2Snapshot } from './ec2-metrics';
 import { clearStageStatusTracking, type StageTransitionState } from './transitions';
 
@@ -96,7 +97,8 @@ export const syncLoadingAnimation = (state: ButtonState, shouldAnimate: boolean,
 		state.loadingAngle = ((state.loadingAngle ?? 0) + LOADING_ROTATION_STEP) % 360;
 		const currentRenderer = state.loadingRenderer;
 		if (currentRenderer) {
-			void currentRenderer();
+			// 每秒 10 次的射後不理呼叫：任何一次 rejection 裸奔都會終止整個外掛程序
+			detach(currentRenderer(), 'loading animation frame');
 		}
 	}, LOADING_ANIMATION_INTERVAL);
 };

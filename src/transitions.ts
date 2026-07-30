@@ -80,7 +80,10 @@ export const clearStageStatusTracking = (state: StageTransitionState): void => {
 };
 
 /**
- * 排程過場效果結束後的重繪
+ * 排程過場效果結束後的重繪。
+ *
+ * `renderer` 依契約必須自行吸收繪圖錯誤（呼叫端的 renderCurrent 已內建 try/catch）：
+ * 這裡是射後不理的計時器回呼，裸奔的 rejection 會終止整個外掛程序。
  */
 export const scheduleStageStatusTransitionFinalize = (
 	state: StageTransitionState,
@@ -109,7 +112,9 @@ export const scheduleStageStatusTransitionFinalize = (
 	const timeoutMs = Math.max(0, nearestDue - now);
 	state.stageStatusTransitionTimer = setTimeout(() => {
 		state.stageStatusTransitionTimer = undefined;
-		void renderer();
+		// 保持此模組無外部依賴（純函式、可單元測試），故不在此記 log；
+		// 錯誤已由 renderer 自己記錄，這個 catch 僅防止 rejection 裸奔終止程序
+		renderer().catch(() => {});
 		resyncAnimation();
 	}, timeoutMs);
 };

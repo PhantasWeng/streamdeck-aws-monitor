@@ -36,7 +36,12 @@ const CONTENT_INSET = 12;
 
 const iconImageCache = new Map<string, Promise<Image>>();
 const actionKeyIconPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../imgs/actions/ec2/key@2x.png');
-const actionKeyIconPromise = loadImage(actionKeyIconPath);
+// 這個 promise 在 module 載入時就啟動，但第一個 await 要等到按鈕出現（willAppear）才發生。
+// 若圖檔讀不到而沒有就地 catch，rejection 會在這段空窗期裸奔並終止整個外掛程序（見 async-guard.ts）。
+const actionKeyIconPromise: Promise<Image | null> = loadImage(actionKeyIconPath).catch((error) => {
+	streamDeck.logger.error('Failed to load EC2 action key icon', error);
+	return null;
+});
 
 const formatTime = (): string => {
 	const now = new Date();
@@ -95,6 +100,9 @@ const getIconImage = async (paths: IconPathDef[], color: string): Promise<Image>
 		return cached;
 	}
 	const imagePromise = loadImage(createIconSvg(paths, color));
+	// 失敗的 promise 不留在快取裡毒化後續每一幀；同時這個 catch 也確保
+	// 即使呼叫端這次不 await（例如已被 dispose）也不會有裸奔的 rejection
+	imagePromise.catch(() => iconImageCache.delete(key));
 	iconImageCache.set(key, imagePromise);
 	return imagePromise;
 };
@@ -369,12 +377,11 @@ export const renderInitFrame = async (title: string): Promise<string> => {
 	ctx.translate(CONTENT_INSET, CONTENT_INSET);
 	ctx.scale(scale, scale);
 
-	try {
-		const iconImg = await actionKeyIconPromise;
+	// 載入失敗時 actionKeyIconPromise 已記錄錯誤並回傳 null，此處僅略過 logo 繼續繪製其餘內容
+	const iconImg = await actionKeyIconPromise;
+	if (iconImg) {
 		const logoSize = 60;
 		ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, 6, logoSize, logoSize);
-	} catch (error) {
-		streamDeck.logger.error('Failed to load EC2 action key icon', error);
 	}
 
 	ctx.fillStyle = 'white';

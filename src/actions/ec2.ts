@@ -7,6 +7,7 @@ import streamDeck, {
 	type WillAppearEvent,
 	type WillDisappearEvent,
 } from '@elgato/streamdeck';
+import { detach } from '../async-guard';
 import {
 	type ButtonState,
 	clearLoadingAnimation,
@@ -129,7 +130,7 @@ const buildButton = (ev: ButtonEvent): void => {
 	} else {
 		clearRefreshTimer(state);
 		clearLoadingAnimation(state);
-		void renderInitButton(ev);
+		detach(renderInitButton(ev), 'EC2 renderInitButton');
 	}
 };
 
@@ -153,7 +154,7 @@ const startMonitoring = (ev: ButtonEvent): void => {
 	const intervals: PollIntervals = debug
 		? { fast: DEBUG_STEP_INTERVAL, idle: DEBUG_STEP_INTERVAL }
 		: { fast: FAST_REFRESH_INTERVAL, idle: IDLE_REFRESH_INTERVAL };
-	void pollOnce(ev, settings, intervals);
+	detach(pollOnce(ev, settings, intervals), 'EC2 pollOnce');
 };
 
 const scheduleNextPoll = (
@@ -170,7 +171,7 @@ const scheduleNextPoll = (
 	clearRefreshTimer(state);
 	state.refreshTimer = setTimeout(() => {
 		state.refreshTimer = undefined;
-		void pollOnce(ev, settings, intervals);
+		detach(pollOnce(ev, settings, intervals), 'EC2 scheduled pollOnce');
 	}, nextInterval);
 };
 
@@ -192,18 +193,24 @@ const pollOnce = async (ev: ButtonEvent, settings: Ec2MonitorSettings, intervals
 		const mode = classifyPoll(snapshot.state);
 		const nextInterval = mode === 'active' ? intervals.fast : intervals.idle;
 
+		// 這個 renderer 會被交給動畫計時器反覆呼叫（射後不理），
+		// 因此它自己吸收所有繪圖錯誤，絕不 reject：單幀失敗只是這次不更新畫面
 		const renderCurrent = async (): Promise<void> => {
-			ev.action.setImage(
-				await renderFrame({
-					title: getButtonTitle(settings),
-					state: snapshot.state,
-					metrics: snapshot.metrics,
-					footer: deriveFooter(snapshot.state, snapshot.statusCheck),
-					rotationDeg: state.loadingAngle ?? 0,
-					borderColor: getBorderColorHex(settings),
-					borderWidth: getBorderWidth(settings),
-				})
-			);
+			try {
+				ev.action.setImage(
+					await renderFrame({
+						title: getButtonTitle(settings),
+						state: snapshot.state,
+						metrics: snapshot.metrics,
+						footer: deriveFooter(snapshot.state, snapshot.statusCheck),
+						rotationDeg: state.loadingAngle ?? 0,
+						borderColor: getBorderColorHex(settings),
+						borderWidth: getBorderWidth(settings),
+					})
+				);
+			} catch (error) {
+				streamDeck.logger.error('Failed to render EC2 frame', error);
+			}
 		};
 
 		const resyncAnimation = (): void => {

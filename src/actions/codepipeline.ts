@@ -1,5 +1,6 @@
 import streamDeck, { action, type KeyDownEvent, type KeyUpEvent, SingletonAction, type WillAppearEvent, type SendToPluginEvent, type DidReceiveSettingsEvent, type WillDisappearEvent } from "@elgato/streamdeck";
 import type { JsonObject, JsonValue } from "@elgato/utils";
+import { detach } from "../async-guard";
 import { fetchPipelineStatuses } from "../aws";
 import {
 	type ButtonState,
@@ -147,7 +148,7 @@ const buildButton = (ev: ButtonEvent): void => {
 		clearLoadingAnimation(state);
 		clearStageStatusTracking(state);
 		state.pollingStartedAt = undefined;
-		void renderInitButton(ev);
+		detach(renderInitButton(ev), 'renderInitButton');
 	}
 };
 
@@ -176,7 +177,7 @@ const startMonitoring = (ev: ButtonEvent): void => {
 	const intervals: PollIntervals = debug
 		? { fast: DEBUG_STEP_INTERVAL, idle: DEBUG_STEP_INTERVAL }
 		: { fast: FAST_REFRESH_INTERVAL, idle: IDLE_REFRESH_INTERVAL };
-	void pollOnce(ev, settings, intervals);
+	detach(pollOnce(ev, settings, intervals), 'pollOnce');
 };
 
 const scheduleNextPoll = (state: ButtonState, ev: ButtonEvent, settings: CodePipelineMonitorSettings, intervals: PollIntervals, nextInterval: number): void => {
@@ -187,7 +188,7 @@ const scheduleNextPoll = (state: ButtonState, ev: ButtonEvent, settings: CodePip
 	clearRefreshTimer(state);
 	state.refreshTimer = setTimeout(() => {
 		state.refreshTimer = undefined;
-		void pollOnce(ev, settings, intervals);
+		detach(pollOnce(ev, settings, intervals), 'scheduled pollOnce');
 	}, nextInterval);
 };
 
@@ -216,16 +217,22 @@ const pollOnce = async (ev: ButtonEvent, settings: CodePipelineMonitorSettings, 
 		const isTerminated = mode === 'terminated';
 		const nextInterval = mode === 'active' ? intervals.fast : intervals.idle;
 
+		// 這個 renderer 會被交給動畫計時器與過場計時器反覆呼叫（皆為射後不理），
+		// 因此它自己吸收所有繪圖錯誤，絕不 reject：單幀失敗只是這次不更新畫面
 		const renderCurrent = async (): Promise<void> => {
-			const displayStatuses = getDisplayStatuses(state, statuses);
-			ev.action.setImage(await renderFrame({
-				title: getButtonTitle(settings),
-				statuses: displayStatuses,
-				footer: deriveFooter(displayStatuses, isTerminated),
-				rotationDeg: state.loadingAngle ?? 0,
-				borderColor: getBorderColorHex(settings),
-				borderWidth: getBorderWidth(settings),
-			}));
+			try {
+				const displayStatuses = getDisplayStatuses(state, statuses);
+				ev.action.setImage(await renderFrame({
+					title: getButtonTitle(settings),
+					statuses: displayStatuses,
+					footer: deriveFooter(displayStatuses, isTerminated),
+					rotationDeg: state.loadingAngle ?? 0,
+					borderColor: getBorderColorHex(settings),
+					borderWidth: getBorderWidth(settings),
+				}));
+			} catch (error) {
+				streamDeck.logger.error('Failed to render CodePipeline frame', error);
+			}
 		};
 
 		const resyncAnimation = (): void => {

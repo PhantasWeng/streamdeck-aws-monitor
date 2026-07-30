@@ -52,6 +52,7 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 - `rendering.ts` — @napi-rs/canvas drawing (144×144): stage 狀態畫成分段進度條（每段依狀態上色，任意 stage 數自動均分，下方顯示「完成數/總數」），footer 用 Iconify line-md SVG 圖示 + full-frame data-URL cache
 - `aws.ts` — CodePipeline client (cached per button, credentials passed directly — never via `process.env`) and stage-status fetch
 - `debug.ts` — simulated 3-stage pipeline fetcher for debug mode
+- `async-guard.ts` — `detach(promise, context)`: the only sanctioned way to make a fire-and-forget async call (see "Unhandled rejections" below)
 
 **Action Pattern**: Uses `SingletonAction` from Stream Deck SDK. Handles `onWillAppear`, `onKeyDown`, `onKeyUp`, `onWillDisappear`, `onDidReceiveSettings`.
 
@@ -77,6 +78,13 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Settings normalization**: `normalizeSettings()` runs on every settings change, coalescing the deprecated `region` field into `pipelineRegion`/`logRegion`.
 
-**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`, `polling`). Rendering/AWS modules are not covered (require canvas / network).
+**Unhandled rejections (IMPORTANT — do not regress)**: Node 20 defaults to `--unhandled-rejections=throw`, so a single rejected promise with no handler kills the whole plugin process. Stream Deck's app log shows `Plugin connected` → `disconnected without reason` → `Process stopped` → restart every 10s, until the plugin is flagged unstable and disabled. Note this looks *nothing* like the canvas `ERR_MODULE_NOT_FOUND` crash: the presence of `Plugin connected` proves module loading succeeded, so the failure is in an async path after `streamDeck.connect()`. Three layers guard against it, all required:
+1. **Never `void` an async call** — use `detach(promise, context)` from `async-guard.ts`, which logs via `streamDeck.logger.error`. `transitions.ts` stays dependency-free (it's a pure unit-tested module) so it uses an inline `.catch(() => {})` and documents that its `renderer` argument must absorb its own errors.
+2. **Module-level promises must `.catch()` at the point of creation.** `rendering.ts` / `ec2-rendering.ts` kick off `loadImage(actionKeyIconPath)` at import time, but the first `await` only happens on `willAppear` — anything rejecting inside that window has no handler attached yet. Both resolve to `Image | null` and the render path skips the logo when null. `getIconImage()` also evicts failed promises from its cache so one failure doesn't poison every later frame.
+3. **`plugin.ts` registers `unhandledRejection` / `uncaughtException` handlers** as a last-resort net that logs instead of exiting.
+
+Note `loadImage()` fails hard on a missing file: `@napi-rs/canvas`'s `load-image.js` falls through to `new URL(source)` when the path doesn't exist, throwing `ERR_INVALID_URL` (not ENOENT) on both POSIX and Windows paths.
+
+**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`, `polling`, `button-state`, `async-guard`) plus `rendering-resilience` (renders through @napi-rs/canvas — the prebuilt binary makes this safe in CI). AWS modules are not covered (require network). `rendering-resilience.test.ts` relies on `<repo>/imgs/...` **not** existing (the real asset lives under `com.phantas-weng.aws-monitor.sdPlugin/imgs/`), which reproduces the missing-logo case for free — don't "fix" that path.
 
 **Code comments**: Written in Traditional Chinese (zh-TW).
