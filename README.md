@@ -22,7 +22,7 @@ _CodePipeline key states: `Not Configured` → `Loading` → `Partially Complete
 
 ![EC2 key states overview](docs/images/key-states/ec2-overview.png)
 
-_EC2 key states: `Not Configured`, `Running` (CPU / memory / disk usage, color-coded by threshold), `CPU Only` (no CloudWatch Agent), and `Stopped`._
+_EC2 key states: `Not Configured`, `Running` (CPU / memory / disk usage, color-coded by threshold), `CPU Only` (no CloudWatch Agent), `CPU Chart` (single-metric chart of the last 2.5 hours), `Impaired` (failing status check), and `Stopped`._
 
 ## Why This Plugin
 
@@ -52,6 +52,7 @@ _EC2 key states: `Not Configured`, `Running` (CPU / memory / disk usage, color-c
 
 - Real-time EC2 instance state (`running` / `stopped` / `pending` / `stopping` / `terminated` …), color-coded, with a large state label when the instance isn't running
 - While running, renders **CPU** plus optional **memory** and **disk** usage rows — memory and disk require the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance; without it, only CPU is shown
+- `Display Mode` switches the key between all three usage rows and a **single-metric chart** (CPU, memory, or disk) covering the last 2.5 hours at 5-minute resolution; the instance name stays centered at the top, and the footer's status icon is replaced by the tracked metric and its current value
 - CloudWatch metrics are fetched only while the instance is running (saves API calls otherwise)
 - Single `Region` shared by both the EC2 and CloudWatch calls
 - Short press to refresh; double-click to open CloudWatch metrics; long press (`0.8s`) to open the instance in the EC2 Console
@@ -144,15 +145,18 @@ npx streamdeck install com.phantas-weng.aws-monitor.sdPlugin
 | `Instance ID` | Yes | EC2 instance ID (e.g. `i-0123456789abcdef0`); set to `debug` to enable simulation mode |
 | `Region` | Yes (except debug) | Region shared by the EC2 and CloudWatch API calls |
 | `Display Name` | No | Custom key title |
+| `Display Mode` | No | `All metrics` (default) for the CPU/memory/disk rows, or `CPU`/`Memory`/`Disk` to chart that single metric over the last 2.5 hours |
 | `Border Color` | No | Environment border color (`red`/`orange`/`yellow`/`green`/`blue`/`indigo`/`violet`); empty for none |
 | `Border Width (px)` | No | Border line width in px; default `6` |
+
+Charts are drawn from CloudWatch data, so they survive a plugin restart — no local history is kept. A chart shows `NO DATA` when the metric is unavailable, most often memory or disk without the CloudWatch Agent, or an instance that has only just started. When the instance's status check is `impaired` the readings are no longer trustworthy, so the chart flattens to a grey line at zero and the value reads `--`.
 
 ## Debug Mode
 
 Preview a key without AWS credentials by setting its identifier field to `debug`:
 
 - **CodePipeline** — set `Pipeline Name` to `debug`. Simulates one deployment run at a time: all stages start loading, then succeed one by one; a stage may randomly fail, which ends the run — the next round starts automatically. Use `debug:N` (e.g. `debug:6`) to simulate `N` stages (`1`–`12`).
-- **EC2** — set `Instance ID` to `debug`. Cycles through `pending` → `running` → `stopping` → `stopped`, showing simulated CPU / memory / disk metrics while running.
+- **EC2** — set `Instance ID` to `debug`. Cycles through `pending` → `running` → `stopping` → `stopped`, showing simulated CPU / memory / disk metrics while running. Works with every `Display Mode`, so the chart layout can be previewed without credentials too.
 
 Both reuse the same rendering, transition, and two-speed polling logic as normal mode.
 
@@ -221,6 +225,7 @@ aws-monitor/
 │   │   └── ec2.ts                # EC2 action + polling orchestration
 │   ├── rendering.ts              # CodePipeline key rendering (node-canvas)
 │   ├── ec2-rendering.ts          # EC2 key rendering (node-canvas)
+│   ├── ec2-chart.ts              # pure chart geometry (series → coordinates)
 │   ├── polling.ts                # pure poll-cadence logic
 │   ├── settings.ts               # settings types + pure helpers
 │   ├── ec2-settings.ts           # EC2 settings types + pure helpers

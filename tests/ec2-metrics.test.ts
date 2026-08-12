@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
 	availableMetrics,
+	chartMetricKey,
 	classifyInstanceState,
 	classifyPoll,
 	deriveFooter,
 	hasMetric,
 	isTransitioning,
+	metricLabel,
+	toDisplayMode,
 } from '../src/ec2-metrics';
 
 describe('classifyInstanceState', () => {
@@ -96,5 +99,44 @@ describe('availableMetrics', () => {
 
 	it('保留 0 值（0% 也是有效資料）', () => {
 		expect(availableMetrics({ cpu: 0 }).map(r => r.value)).toEqual([0]);
+	});
+});
+
+describe('toDisplayMode', () => {
+	it('接受四種合法模式', () => {
+		expect(toDisplayMode('all')).toBe('all');
+		expect(toDisplayMode('cpu')).toBe('cpu');
+		expect(toDisplayMode('mem')).toBe('mem');
+		expect(toDisplayMode('disk')).toBe('disk');
+	});
+
+	it('容忍大小寫與空白', () => {
+		expect(toDisplayMode(' Disk ')).toBe('disk');
+	});
+
+	it('未設定或無法辨識回退為 all', () => {
+		expect(toDisplayMode(undefined)).toBe('all');
+		expect(toDisplayMode('')).toBe('all');
+		expect(toDisplayMode('memory')).toBe('all');
+	});
+});
+
+describe('chartMetricKey', () => {
+	it('all 模式沒有線圖指標', () => {
+		expect(chartMetricKey('all')).toBeNull();
+	});
+
+	it('單指標模式回傳對應的指標 key', () => {
+		expect(chartMetricKey('cpu')).toBe('cpu');
+		expect(chartMetricKey('mem')).toBe('mem');
+		expect(chartMetricKey('disk')).toBe('disk');
+	});
+});
+
+describe('metricLabel', () => {
+	it('與 all 模式列標籤同一組字樣', () => {
+		expect(metricLabel('cpu')).toBe('CPU');
+		expect(metricLabel('mem')).toBe('MEM');
+		expect(metricLabel('disk')).toBe('DSK');
 	});
 });

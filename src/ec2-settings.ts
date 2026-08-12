@@ -1,6 +1,7 @@
 /**
  * Ec2Monitor 的設定型別與純函式工具
  */
+import { type Ec2DisplayMode, toDisplayMode } from './ec2-metrics';
 import { BORDER_COLORS, resolveBorderWidth } from './settings';
 
 export type Ec2MonitorSettings = {
@@ -9,6 +10,7 @@ export type Ec2MonitorSettings = {
 	region?: string; // EC2 與 CloudWatch 共用的 region
 	instanceId: string;
 	displayName?: string;
+	displayMode?: string; // 可選：all（多指標橫條）或 cpu/mem/disk（單指標線圖），未填為 all
 	borderColor?: string; // 可選：外框顏色代號（red/orange/yellow/green/blue/indigo/violet）
 	borderWidth?: number | string; // 可選：外框線寬（px），未填用預設值
 };
@@ -29,11 +31,18 @@ export const isDebugMode = (settings: Ec2MonitorSettings): boolean =>
 export const getRegion = (settings: Ec2MonitorSettings): string => settings.region?.trim() || '';
 
 /**
- * 正規化設定：trim region（保留一致的 normalize 入口，與 CodePipeline 對齊）
+ * 取得顯示模式；未設定或無法辨識回退為 all，讓既有按鈕維持原本的多指標畫面
+ */
+export const getDisplayMode = (settings: Ec2MonitorSettings): Ec2DisplayMode =>
+	toDisplayMode(settings.displayMode);
+
+/**
+ * 正規化設定：trim region、補上顯示模式（保留一致的 normalize 入口，與 CodePipeline 對齊）
  */
 export const normalizeSettings = (settings: Ec2MonitorSettings): Ec2MonitorSettings => ({
 	...settings,
 	region: getRegion(settings),
+	displayMode: getDisplayMode(settings),
 });
 
 export const getButtonTitle = (settings: Ec2MonitorSettings): string =>

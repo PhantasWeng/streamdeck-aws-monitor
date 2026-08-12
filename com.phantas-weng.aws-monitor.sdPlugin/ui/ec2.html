@@ -28,6 +28,7 @@
       const saveButton = document.getElementById('saveButton');
       const saveStatus = document.getElementById('saveStatus');
       const displayNameField = document.getElementById('displayName');
+      const displayModeField = document.getElementById('displayMode');
       const borderColorField = document.getElementById('borderColor');
       const borderWidthField = document.getElementById('borderWidth');
       const borderWidthValue = document.getElementById('borderWidthValue');
@@ -65,6 +66,7 @@
       const hydrateForm = (settings) => {
         if (!settings) return;
         setFieldValue(displayNameField, settings.displayName);
+        setFieldValue(displayModeField, settings.displayMode || 'all');
         setFieldValue(borderColorField, settings.borderColor);
         setFieldValue(borderWidthField, settings.borderWidth || 6);
         updateBorderWidthLabel();
@@ -76,6 +78,7 @@
 
       const collectFormSettings = () => ({
         displayName: displayNameField.value?.trim() || '',
+        displayMode: displayModeField.value || 'all',
         borderColor: borderColorField.value || '',
         borderWidth: String(borderWidthField.value ?? '').trim() || '6',
         AWS_ACCESS_KEY_ID: accessKeyField.value?.trim() || '',
@@ -109,6 +112,14 @@
 <body>
   <sdpi-item label="Display Name">
     <sdpi-textfield id="displayName"></sdpi-textfield>
+  </sdpi-item>
+  <sdpi-item label="Display Mode">
+    <sdpi-select id="displayMode">
+      <option value="all">All metrics</option>
+      <option value="cpu">CPU (chart)</option>
+      <option value="mem">Memory (chart)</option>
+      <option value="disk">Disk (chart)</option>
+    </sdpi-select>
   </sdpi-item>
   <sdpi-item label="Border Color">
     <sdpi-select id="borderColor">
@@ -156,6 +167,7 @@
     <summary>Help</summary>
     <p><b>Instance ID</b>: enter <code>i-xxxxxxxx</code>, or use <code>debug</code> for simulation mode (no credentials required).</p>
     <p><b>Metrics</b>: CPU is a native EC2 metric. Memory and disk usage require the CloudWatch Agent on the instance; without it, the button shows CPU only.</p>
+    <p><b>Display Mode</b>: <code>All metrics</code> shows the current CPU/memory/disk bars. Picking a single metric draws a chart of the last 2.5 hours instead (5-minute resolution, ~30 points). The chart shows <code>NO DATA</code> when the metric is unavailable — most often memory or disk without the CloudWatch Agent.</p>
     <p><b>IAM permissions</b>: <code>ec2:DescribeInstances</code>, <code>ec2:DescribeInstanceStatus</code>, <code>cloudwatch:GetMetricData</code>.</p>
     <p><b>Actions</b>: single press to refresh; double-press to open CloudWatch metrics; long press to open the EC2 Console.</p>
   </details>

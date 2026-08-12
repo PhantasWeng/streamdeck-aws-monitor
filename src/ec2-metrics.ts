@@ -9,11 +9,48 @@ export type Ec2Metrics = {
 	disk?: number; // 磁碟使用率 %（需 CloudWatch Agent）
 };
 
+// 單一指標的時間序列資料點（t = epoch ms，v = 使用率 %）
+export type MetricPoint = { t: number; v: number };
+
+/**
+ * 線圖模式的時間序列。
+ * 視窗起訖獨立於資料點：x 軸必須以「查詢視窗」定位而非資料點的 min/max，
+ * 否則資料稀疏（instance 剛開機、CloudWatch Agent 中斷）時會被畫成一條
+ * 均勻連續的假訊號。points 依時間遞增排序，可能為空。
+ */
+export type Ec2Series = {
+	windowStartMs: number;
+	windowEndMs: number;
+	points: MetricPoint[];
+};
+
 export type Ec2Snapshot = {
 	state: string; // running / stopped / pending / stopping / shutting-down / terminated
 	statusCheck?: string; // ok / impaired / insufficient-data（system 與 instance 檢查合併）
 	metrics: Ec2Metrics;
+	series?: Ec2Series; // 僅線圖模式（displayMode 非 all）才查詢
 };
+
+// 按鈕顯示模式：all = 現況的多指標橫條；其餘為單一指標的心電圖線圖
+export type Ec2DisplayMode = 'all' | 'cpu' | 'mem' | 'disk';
+
+export const DEFAULT_DISPLAY_MODE: Ec2DisplayMode = 'all';
+
+const DISPLAY_MODES: Ec2DisplayMode[] = ['all', 'cpu', 'mem', 'disk'];
+
+/**
+ * 驗證並正規化顯示模式；未設定或無法辨識一律回退到 all（維持舊按鈕的行為）
+ */
+export const toDisplayMode = (value?: string): Ec2DisplayMode => {
+	const normalized = value?.trim().toLowerCase() ?? '';
+	return DISPLAY_MODES.find(mode => mode === normalized) ?? DEFAULT_DISPLAY_MODE;
+};
+
+/**
+ * 線圖模式時回傳要繪製的指標 key；all 模式回傳 null
+ */
+export const chartMetricKey = (mode: Ec2DisplayMode): keyof Ec2Metrics | null =>
+	mode === 'all' ? null : mode;
 
 // 依 EC2 生命週期狀態的語意分類
 export type Ec2StateClass = 'transitioning' | 'running' | 'stopped' | 'terminated' | 'unknown';
@@ -92,6 +129,12 @@ const METRIC_ORDER: { key: keyof Ec2Metrics; label: string }[] = [
 	{ key: 'mem', label: 'MEM' },
 	{ key: 'disk', label: 'DSK' },
 ];
+
+/**
+ * 取得指標的顯示標籤（線圖模式的模式標示與 all 模式的列標籤共用同一組字樣）
+ */
+export const metricLabel = (key: keyof Ec2Metrics): string =>
+	METRIC_ORDER.find(metric => metric.key === key)?.label ?? key.toUpperCase();
 
 /**
  * 取出目前拿得到的指標（依固定順序），供 rendering 依數量自適應版面。

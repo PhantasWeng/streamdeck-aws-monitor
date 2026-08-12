@@ -47,3 +47,54 @@ describe('createDebugFetcher', () => {
 		expect((await second()).state).toBe('pending');
 	});
 });
+
+describe('createDebugFetcher 線圖模式', () => {
+	it('running 期間回傳時間序列而非橫條指標', async () => {
+		const fetcher = createDebugFetcher('cpu');
+		await fetcher(); // pending
+		const snap = await fetcher(); // running
+		expect(snap.state).toBe('running');
+		expect(snap.metrics).toEqual({});
+		expect(snap.series?.points.length).toBeGreaterThan(1);
+	});
+
+	it('序列時間遞增且落在視窗內、值在 0–100', async () => {
+		const fetcher = createDebugFetcher('mem');
+		await fetcher();
+		const series = (await fetcher()).series;
+		if (!series) {
+			throw new Error('running 應該要有序列');
+		}
+		const times = series.points.map(p => p.t);
+		expect([...times].sort((a, b) => a - b)).toEqual(times);
+		expect(times[0]).toBeGreaterThanOrEqual(series.windowStartMs);
+		expect(times.at(-1)).toBeLessThanOrEqual(series.windowEndMs);
+		for (const point of series.points) {
+			expect(point.v).toBeGreaterThanOrEqual(0);
+			expect(point.v).toBeLessThanOrEqual(100);
+		}
+	});
+
+	it('非 running 狀態沒有序列', async () => {
+		const fetcher = createDebugFetcher('disk');
+		expect((await fetcher()).series).toBeUndefined();
+	});
+
+	it('不同指標波形不同（切換模式看得出差異）', async () => {
+		const cpu = createDebugFetcher('cpu');
+		const disk = createDebugFetcher('disk');
+		await cpu();
+		await disk();
+		const cpuValues = (await cpu()).series?.points.map(p => p.v);
+		const diskValues = (await disk()).series?.points.map(p => p.v);
+		expect(cpuValues).not.toEqual(diskValues);
+	});
+
+	it('預設仍是 all 模式（回傳三項指標）', async () => {
+		const fetcher = createDebugFetcher();
+		await fetcher();
+		const snap = await fetcher();
+		expect(snap.series).toBeUndefined();
+		expect(typeof snap.metrics.cpu).toBe('number');
+	});
+});

@@ -74,6 +74,12 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 **Button interactions**: short press → refresh; double-click (within 500ms) → open CloudWatch logs (requires `logGroupName`); long-press (0.8s) → open AWS Console
 
+**EC2 display mode / charts (IMPORTANT — do not regress)**: the EC2 action's `displayMode` setting is `all` (the CPU/MEM/DSK bars) or a single metric (`cpu`/`mem`/`disk`) rendered as a chart. Unset or unrecognized values fall back to `all`, so existing buttons keep their layout. Three things are easy to break:
+1. **The chart's history comes from CloudWatch, not from local accumulation.** `GetMetricData` already returns the whole window in `Values`/`Timestamps`; the all-mode path just takes `[0]`. Chart mode reuses the same query builders (`buildCpuQuery` / `buildAgentQueries`) with a longer window and only requests the selected metric — CPU needs 1 metric vs. all-mode's 7, so charts cost *less* per poll. Widening the window is free (GetMetricData bills per requested metric, not per datapoint).
+2. **x must be positioned by timestamp, never by array index** (`src/ec2-chart.ts`). Sparse or unevenly-spaced data is normal — an instance that just booted, a stalled CloudWatch Agent, or CPU on basic monitoring (5-minute resolution). `buildChartSegments` also splits the polyline at gaps larger than `CHART_GAP_MS`; a line drawn straight across a data gap reads as steady data that was never collected.
+3. **The frame cache key must contain the whole series** (`seriesKey` in `ec2-rendering.ts`), not just the latest value — otherwise a changed history with an unchanged current value silently reuses a stale frame.
+Window/resolution constants live together in `ec2-chart.ts` (`CHART_PERIOD_SECONDS` / `CHART_LOOKBACK_MS` / `CHART_GAP_MS`) because they're coupled; `ec2-aws.ts` imports the query parameters from there.
+
 **Debug mode**: Set `pipelineName` to `debug` (or `debug:N` for an N-stage simulation, N clamped to 1–12) in settings — simulates pipeline progression without AWS credentials (see `src/debug.ts`). Useful for UI development.
 
 **Settings normalization**: `normalizeSettings()` runs on every settings change, coalescing the deprecated `region` field into `pipelineRegion`/`logRegion`.
@@ -85,6 +91,6 @@ This is a **Stream Deck plugin** for monitoring AWS CodePipeline deployments.
 
 Note `loadImage()` fails hard on a missing file: `@napi-rs/canvas`'s `load-image.js` falls through to `new URL(source)` when the path doesn't exist, throwing `ERR_INVALID_URL` (not ENOENT) on both POSIX and Windows paths.
 
-**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`, `polling`, `button-state`, `async-guard`) plus `rendering-resilience` (renders through @napi-rs/canvas — the prebuilt binary makes this safe in CI). AWS modules are not covered (require network). `rendering-resilience.test.ts` relies on `<repo>/imgs/...` **not** existing (the real asset lives under `com.phantas-weng.aws-monitor.sdPlugin/imgs/`), which reproduces the missing-logo case for free — don't "fix" that path.
+**Tests**: `tests/` covers the pure modules (`settings`, `transitions`, `debug`, `polling`, `button-state`, `async-guard`, `ec2-settings`, `ec2-metrics`, `ec2-debug`, `ec2-chart`) plus `ec2-rendering` (chart layout, NO DATA fallback, and the cache-key regressions above) and `rendering-resilience` (renders through @napi-rs/canvas — the prebuilt binary makes this safe in CI). AWS modules are not covered (require network). `rendering-resilience.test.ts` relies on `<repo>/imgs/...` **not** existing (the real asset lives under `com.phantas-weng.aws-monitor.sdPlugin/imgs/`), which reproduces the missing-logo case for free — don't "fix" that path.
 
 **Code comments**: Written in Traditional Chinese (zh-TW).

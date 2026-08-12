@@ -5,6 +5,7 @@ import {
 	getBorderColorHex,
 	getButtonTitle,
 	getCloudWatchUrl,
+	getDisplayMode,
 	getRegion,
 	hasRequiredSettings,
 	isDebugMode,
@@ -92,5 +93,37 @@ describe('URL builders', () => {
 		const url = getCloudWatchUrl(baseSettings);
 		expect(url).toContain('https://ap-northeast-1.console.aws.amazon.com/cloudwatch/');
 		expect(url).toContain('i-0abc123def456');
+	});
+});
+
+describe('getDisplayMode', () => {
+	it('未設定時為 all（既有按鈕維持原本畫面）', () => {
+		expect(getDisplayMode(baseSettings)).toBe('all');
+	});
+
+	it('接受四種模式', () => {
+		expect(getDisplayMode({ ...baseSettings, displayMode: 'all' })).toBe('all');
+		expect(getDisplayMode({ ...baseSettings, displayMode: 'cpu' })).toBe('cpu');
+		expect(getDisplayMode({ ...baseSettings, displayMode: 'mem' })).toBe('mem');
+		expect(getDisplayMode({ ...baseSettings, displayMode: 'disk' })).toBe('disk');
+	});
+
+	it('容忍大小寫與空白', () => {
+		expect(getDisplayMode({ ...baseSettings, displayMode: '  CPU ' })).toBe('cpu');
+	});
+
+	it('無法辨識的值回退為 all', () => {
+		expect(getDisplayMode({ ...baseSettings, displayMode: 'network' })).toBe('all');
+		expect(getDisplayMode({ ...baseSettings, displayMode: '' })).toBe('all');
+	});
+});
+
+describe('normalizeSettings 的 displayMode', () => {
+	it('補上預設值', () => {
+		expect(normalizeSettings(baseSettings).displayMode).toBe('all');
+	});
+
+	it('保留合法值並正規化格式', () => {
+		expect(normalizeSettings({ ...baseSettings, displayMode: 'MEM' }).displayMode).toBe('mem');
 	});
 });

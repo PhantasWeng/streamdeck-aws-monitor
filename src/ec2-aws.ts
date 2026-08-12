@@ -2,12 +2,13 @@ import { CloudWatchClient, GetMetricDataCommand } from '@aws-sdk/client-cloudwat
 import { DescribeInstancesCommand, DescribeInstanceStatusCommand, EC2Client } from '@aws-sdk/client-ec2';
 import streamDeck from '@elgato/streamdeck';
 import type { ButtonState } from './button-state';
-import type { Ec2Metrics, Ec2Snapshot } from './ec2-metrics';
-import { type Ec2MonitorSettings, getRegion } from './ec2-settings';
+import { CHART_LOOKBACK_MS, CHART_PERIOD_SECONDS } from './ec2-chart';
+import { chartMetricKey, type Ec2Metrics, type Ec2Series, type Ec2Snapshot } from './ec2-metrics';
+import { type Ec2MonitorSettings, getDisplayMode, getRegion } from './ec2-settings';
 
 // CloudWatch 指標查詢視窗：往回 15 分鐘、5 分鐘一個資料點，取最新的一筆
 const METRIC_LOOKBACK_MS = 15 * 60 * 1000;
-const METRIC_PERIOD_SECONDS = 300;
+const METRIC_PERIOD_SECONDS = CHART_PERIOD_SECONDS;
 
 /**
  * 確保 EC2 與 CloudWatch client 已建立且對應目前的 region/憑證。
@@ -74,49 +75,59 @@ const DISK_SCHEMAS = [
 	'{CWAgent,AutoScalingGroupName,ImageId,InstanceId,InstanceType,device,fstype,path}',
 ];
 
+// CloudWatch Agent 指標（mem/disk）的查詢設定；CPU 走原生指標故不在此表
+type AgentMetricKey = 'mem' | 'disk';
+const AGENT_METRICS: Record<AgentMetricKey, { schemas: string[]; metricName: string; extraFilter: string }> = {
+	mem: { schemas: MEM_SCHEMAS, metricName: 'mem_used_percent', extraFilter: '' },
+	disk: { schemas: DISK_SCHEMAS, metricName: 'disk_used_percent', extraFilter: ' path="/"' },
+};
+
 /**
- * 查詢 CPU / 記憶體 / 磁碟使用率。
- * CPU 走 EC2 原生指標（維度僅 InstanceId，精準可靠）；
+ * CPU 走 EC2 原生指標（維度僅 InstanceId，精準可靠）
+ */
+const buildCpuQuery = (instanceId: string) => ({
+	Id: 'cpu',
+	MetricStat: {
+		Metric: {
+			Namespace: 'AWS/EC2',
+			MetricName: 'CPUUtilization',
+			Dimensions: [{ Name: 'InstanceId', Value: instanceId }],
+		},
+		Period: METRIC_PERIOD_SECONDS,
+		Stat: 'Average',
+	},
+	ReturnData: true,
+});
+
+/**
  * 記憶體與磁碟為 CloudWatch Agent 指標，對多組常見 schema 各發一次 SEARCH，
- * 取第一個有資料的（相容不同 agent 設定）。磁碟只取根目錄。
- * 未裝 CloudWatch Agent 時全部回空，對應指標為 undefined（自動不顯示）。
+ * 由呼叫端取第一個有資料的（相容不同 agent 設定）。磁碟只取根目錄。
+ */
+const buildAgentQueries = (key: AgentMetricKey, instanceId: string) => {
+	const { schemas, metricName, extraFilter } = AGENT_METRICS[key];
+	return schemas.map((schema, i) => ({
+		Id: `${key}${i}`,
+		Expression: `AVG(SEARCH('${schema} MetricName="${metricName}" InstanceId="${instanceId}"${extraFilter}', 'Average', ${METRIC_PERIOD_SECONDS}))`,
+		ReturnData: true,
+	}));
+};
+
+/**
+ * 查詢 CPU / 記憶體 / 磁碟的目前使用率（all 模式）。
+ * 未裝 CloudWatch Agent 時記憶體與磁碟回 undefined（畫面自動不顯示該列）。
  */
 const fetchMetrics = async (cw: CloudWatchClient, instanceId: string): Promise<Ec2Metrics> => {
 	const now = new Date();
 	const start = new Date(now.getTime() - METRIC_LOOKBACK_MS);
-	const memQueries = MEM_SCHEMAS.map((schema, i) => ({
-		Id: `mem${i}`,
-		Expression: `AVG(SEARCH('${schema} MetricName="mem_used_percent" InstanceId="${instanceId}"', 'Average', ${METRIC_PERIOD_SECONDS}))`,
-		ReturnData: true,
-	}));
-	const diskQueries = DISK_SCHEMAS.map((schema, i) => ({
-		Id: `disk${i}`,
-		Expression: `AVG(SEARCH('${schema} MetricName="disk_used_percent" InstanceId="${instanceId}" path="/"', 'Average', ${METRIC_PERIOD_SECONDS}))`,
-		ReturnData: true,
-	}));
+	const memQueries = buildAgentQueries('mem', instanceId);
+	const diskQueries = buildAgentQueries('disk', instanceId);
 
 	const response = await cw.send(
 		new GetMetricDataCommand({
 			StartTime: start,
 			EndTime: now,
 			ScanBy: 'TimestampDescending', // 最新的資料點排在最前
-			MetricDataQueries: [
-				{
-					Id: 'cpu',
-					MetricStat: {
-						Metric: {
-							Namespace: 'AWS/EC2',
-							MetricName: 'CPUUtilization',
-							Dimensions: [{ Name: 'InstanceId', Value: instanceId }],
-						},
-						Period: METRIC_PERIOD_SECONDS,
-						Stat: 'Average',
-					},
-					ReturnData: true,
-				},
-				...memQueries,
-				...diskQueries,
-			],
+			MetricDataQueries: [buildCpuQuery(instanceId), ...memQueries, ...diskQueries],
 		})
 	);
 
@@ -144,8 +155,51 @@ const fetchMetrics = async (cw: CloudWatchClient, instanceId: string): Promise<E
 };
 
 /**
+ * 查詢單一指標的時間序列（線圖模式）。
+ * 只查選定的那個指標——CPU 只需 1 個 metric、mem/disk 各 3 個 schema 候選，
+ * 比 all 模式的 7 個省下大半 GetMetricData 費用。
+ * 拉長視窗本身不加價（GetMetricData 依「requested metrics 數量」計費，與資料點數無關）。
+ */
+const fetchMetricSeries = async (
+	cw: CloudWatchClient,
+	instanceId: string,
+	key: keyof Ec2Metrics
+): Promise<Ec2Series> => {
+	const now = new Date();
+	const start = new Date(now.getTime() - CHART_LOOKBACK_MS);
+	const queries = key === 'cpu' ? [buildCpuQuery(instanceId)] : buildAgentQueries(key, instanceId);
+	const window = { windowStartMs: start.getTime(), windowEndMs: now.getTime() };
+
+	const response = await cw.send(
+		new GetMetricDataCommand({
+			StartTime: start,
+			EndTime: now,
+			ScanBy: 'TimestampAscending', // 線圖需要時間遞增
+			MetricDataQueries: queries,
+		})
+	);
+
+	// 依 schema 候選順序取第一個有資料的序列
+	for (const query of queries) {
+		const result = response.MetricDataResults?.find(r => r.Id === query.Id);
+		const timestamps = result?.Timestamps ?? [];
+		const values = result?.Values ?? [];
+		const points = timestamps
+			.map((timestamp, i) => ({ t: timestamp.getTime(), v: values[i] }))
+			.filter((point): point is { t: number; v: number } => typeof point.v === 'number')
+			.map(({ t, v }) => ({ t, v: toPercent(v) }))
+			.sort((a, b) => a.t - b.t);
+		if (points.length > 0) {
+			return { ...window, points };
+		}
+	}
+	return { ...window, points: [] };
+};
+
+/**
  * 查詢單台 EC2 instance 的狀態、status check 與使用率指標。
  * 只有 running 時才拉 CloudWatch 指標（其他狀態沒有資料，省下 API 呼叫）。
+ * 線圖模式改拉單一指標的時間序列，all 模式維持三項指標的目前值。
  */
 export const fetchEc2Snapshot = async (state: ButtonState, settings: Ec2MonitorSettings): Promise<Ec2Snapshot> => {
 	const { ec2, cw } = ensureClients(state, settings);
@@ -161,9 +215,14 @@ export const fetchEc2Snapshot = async (state: ButtonState, settings: Ec2MonitorS
 	const status = statusResponse.InstanceStatuses?.[0];
 	const statusCheck = combineStatusCheck(status?.SystemStatus?.Status, status?.InstanceStatus?.Status);
 
-	const metrics = instanceState === 'running' ? await fetchMetrics(cw, instanceId) : {};
-
-	const snapshot: Ec2Snapshot = { state: instanceState, statusCheck, metrics };
+	const chartKey = chartMetricKey(getDisplayMode(settings));
+	const running = instanceState === 'running';
+	const snapshot: Ec2Snapshot = {
+		state: instanceState,
+		statusCheck,
+		metrics: running && !chartKey ? await fetchMetrics(cw, instanceId) : {},
+		series: running && chartKey ? await fetchMetricSeries(cw, instanceId, chartKey) : undefined,
+	};
 	streamDeck.logger.debug('AWS EC2 snapshot', snapshot);
 	return snapshot;
 };

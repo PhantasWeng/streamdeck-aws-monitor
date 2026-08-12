@@ -84,7 +84,7 @@ const createButtonCanvas = () => {
 
 const drawTitle = (ctx, title) => {
   ctx.fillStyle = "white";
-  ctx.font = "24px sans-serif bold";
+  ctx.font = "bold 24px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(title, 72, TITLE_Y, 134);
 };
@@ -253,13 +253,13 @@ const renderNotConfiguredFrame = async (title) => {
 
   // 第二行：標題
   ctx.fillStyle = "white";
-  ctx.font = "22px sans-serif bold";
+  ctx.font = "bold 22px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(title, 72, 67, 134);
 
   // 第三行：未設定狀態文字
   ctx.fillStyle = "#f59e0b";
-  ctx.font = "20px sans-serif bold";
+  ctx.font = "bold 20px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
 
@@ -499,7 +499,7 @@ const getUsageColor = (pct) => {
 };
 
 const drawTitleWithState = (ctx, title, state) => {
-  ctx.font = "24px sans-serif bold";
+  ctx.font = "bold 24px sans-serif";
   ctx.textAlign = "left";
   const textWidth = Math.min(ctx.measureText(title).width, EC2_TITLE_MAX_TEXT_WIDTH);
   const dotDiameter = EC2_TITLE_DOT_RADIUS * 2;
@@ -529,7 +529,7 @@ const drawMetricRows = (ctx, metrics) => {
     const textY = cy - 9;
 
     ctx.fillStyle = "white";
-    ctx.font = "17px sans-serif bold";
+    ctx.font = "bold 17px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText(row.label, EC2_METRIC_LABEL_X, textY);
 
@@ -557,7 +557,7 @@ const drawStateLabel = (ctx, state, rotationDeg) => {
     ctx.globalAlpha = 0.5 + 0.5 * ((wave + 1) / 2);
   }
   ctx.fillStyle = getEc2StateColor(state);
-  ctx.font = "26px sans-serif bold";
+  ctx.font = "bold 26px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(state.toUpperCase(), 72, 66, 132);
   ctx.restore();
@@ -588,9 +588,174 @@ const drawEc2Footer = async (ctx, footer, phaseDeg) => {
   }
 };
 
+// 線圖模式（對齊 src/ec2-rendering.ts + src/ec2-chart.ts）
+const EC2_CHART_META_RIGHT = 138;
+const EC2_CHART_META_GAP = 6;
+const EC2_CHART_BOX = { left: 4, top: 44, width: 136, height: 68 };
+const EC2_CHART_LINE_WIDTH = 2.5;
+const EC2_CHART_TIP_RADIUS = 3;
+
+const clampPercent = (value) => Math.max(0, Math.min(100, value));
+
+const buildChartSegments = (series, box, gapMs) => {
+  const segments = [];
+  let current = [];
+  let previousTime;
+
+  for (const point of series.points) {
+    if (previousTime !== undefined && point.t - previousTime > gapMs && current.length > 0) {
+      segments.push(current);
+      current = [];
+    }
+    const span = series.windowEndMs - series.windowStartMs;
+    const ratio = span > 0 ? (point.t - series.windowStartMs) / span : 0;
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    current.push({
+      x: box.left + clampedRatio * box.width,
+      y: box.top + (1 - clampPercent(point.v) / 100) * box.height
+    });
+    previousTime = point.t;
+  }
+  if (current.length > 0) {
+    segments.push(current);
+  }
+  return segments;
+};
+
+const latestValue = (series) => {
+  const last = series?.points.at(-1);
+  return last ? clampPercent(last.v) : undefined;
+};
+
+const hexToRgba = (hex, alpha) => {
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const drawChartFooter = (ctx, timeText, modeLabel, value) => {
+  ctx.fillStyle = "white";
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(timeText, 8, FOOTER_TEXT_Y);
+
+  const valueText = value !== undefined ? `${value}%` : "--";
+  ctx.textAlign = "right";
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillStyle = value !== undefined ? getUsageColor(value) : "#9ca3af";
+  const valueWidth = ctx.measureText(valueText).width;
+  ctx.fillText(valueText, EC2_CHART_META_RIGHT, FOOTER_TEXT_Y);
+
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillText(modeLabel, EC2_CHART_META_RIGHT - valueWidth - EC2_CHART_META_GAP, FOOTER_TEXT_Y + 2);
+};
+
+const drawSparkline = (ctx, series, gapMs) => {
+  const box = EC2_CHART_BOX;
+  const segments = buildChartSegments(series, box, gapMs);
+  const color = getUsageColor(latestValue(series) ?? 0);
+  const bottom = box.top + box.height;
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(box.left, bottom);
+  ctx.lineTo(box.left + box.width, bottom);
+  ctx.stroke();
+
+  const gradient = ctx.createLinearGradient(0, box.top, 0, bottom);
+  gradient.addColorStop(0, hexToRgba(color, 0.38));
+  gradient.addColorStop(1, hexToRgba(color, 0));
+
+  for (const segment of segments) {
+    if (segment.length === 1) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(segment[0].x, segment[0].y, EC2_CHART_LINE_WIDTH / 2, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(segment[0].x, bottom);
+    for (const point of segment) {
+      ctx.lineTo(point.x, point.y);
+    }
+    ctx.lineTo(segment[segment.length - 1].x, bottom);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = EC2_CHART_LINE_WIDTH;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    segment.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+  }
+
+  const tip = segments.at(-1)?.at(-1);
+  if (tip) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, EC2_CHART_TIP_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
+// README 用的示範序列：30 點 × 5 分鐘 = 2.5 小時（與正式模式的視窗一致）
+const sampleChartSeries = () => {
+  const points = 30;
+  const step = 5 * 60 * 1000;
+  const end = Date.now();
+  return {
+    windowStartMs: end - points * step,
+    windowEndMs: end,
+    points: Array.from({ length: points }, (_, i) => ({
+      t: end - (points - 1 - i) * step,
+      v: Math.max(5, Math.min(95, Math.round(55 + 20 * Math.sin(i * 0.5) + 14 * Math.sin(i * 1.7))))
+    }))
+  };
+};
+
+const drawImpairedChart = (ctx) => {
+  const box = EC2_CHART_BOX;
+  const bottom = box.top + box.height;
+  ctx.strokeStyle = "#9ca3af";
+  ctx.lineWidth = EC2_CHART_LINE_WIDTH;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(box.left, bottom);
+  ctx.lineTo(box.left + box.width, bottom);
+  ctx.stroke();
+};
+
+const drawNoChartData = (ctx) => {
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "bold 20px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("NO DATA", 72, EC2_CHART_BOX.top + EC2_CHART_BOX.height / 2 - 10, 132);
+};
+
 // 內容一律等比內縮（對齊 src/ec2-rendering.ts），框線僅額外疊加
 const renderEc2Frame = async (
-  { title, state, metrics, footer, rotationDeg = 0, borderColor = null } = {}
+  {
+    title,
+    state,
+    metrics,
+    footer,
+    rotationDeg = 0,
+    borderColor = null,
+    series = null,
+    modeLabel = "CPU",
+    gapMs = 600000
+  } = {}
 ) => {
   const { canvas, ctx } = createButtonCanvas();
   const scale = (CANVAS_SIZE - CONTENT_INSET * 2) / CANVAS_SIZE;
@@ -598,13 +763,26 @@ const renderEc2Frame = async (
   ctx.translate(CONTENT_INSET, CONTENT_INSET);
   ctx.scale(scale, scale);
 
-  drawTitleWithState(ctx, title, state);
-  if (availableMetrics(metrics).length > 0) {
-    drawMetricRows(ctx, metrics);
+  if (series && classifyInstanceState(state) === "running") {
+    const impaired = footer === "impaired";
+    drawTitleWithState(ctx, title, state);
+    if (impaired) {
+      drawImpairedChart(ctx);
+    } else if (series.points.length > 0) {
+      drawSparkline(ctx, series, gapMs);
+    } else {
+      drawNoChartData(ctx);
+    }
+    drawChartFooter(ctx, formatTime(), modeLabel, impaired ? undefined : latestValue(series));
   } else {
-    drawStateLabel(ctx, state, rotationDeg);
+    drawTitleWithState(ctx, title, state);
+    if (availableMetrics(metrics).length > 0) {
+      drawMetricRows(ctx, metrics);
+    } else {
+      drawStateLabel(ctx, state, rotationDeg);
+    }
+    await drawEc2Footer(ctx, footer, rotationDeg);
   }
-  await drawEc2Footer(ctx, footer, rotationDeg);
 
   ctx.restore();
 
@@ -627,12 +805,12 @@ const renderEc2NotConfiguredFrame = async (title) => {
   ctx.drawImage(iconImg, (CANVAS_SIZE - logoSize) / 2, 6, logoSize, logoSize);
 
   ctx.fillStyle = "white";
-  ctx.font = "22px sans-serif bold";
+  ctx.font = "bold 22px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(title, 72, 78, 134);
 
   ctx.fillStyle = "#f59e0b";
-  ctx.font = "20px sans-serif bold";
+  ctx.font = "bold 20px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(INIT_STATUS_LABEL, 72, 116, 132);
 
@@ -642,6 +820,16 @@ const renderEc2NotConfiguredFrame = async (title) => {
 };
 
 const buildEc2Overview = async () => {
+  const labels = ["Not Configured", "Running", "CPU Only", "CPU Chart", "Impaired", "Stopped"];
+  const files = [
+    "ec2-not-configured.png",
+    "ec2-running.png",
+    "ec2-cpu-only.png",
+    "ec2-cpu-chart.png",
+    "ec2-impaired.png",
+    "ec2-stopped.png"
+  ];
+
   const startX = 28;
   const gap = 20;
   const slotW = 261;
@@ -649,16 +837,13 @@ const buildEc2Overview = async () => {
   const imageInset = 13;
   const topY = 28;
   const labelToKeyGap = 48;
-  const cardW = startX * 2 + slotW * 4 + gap * 3;
+  const cardW = startX * 2 + slotW * labels.length + gap * (labels.length - 1);
   const cardH = topY + labelToKeyGap + slotH + 24;
   const canvas = createCanvas(cardW, cardH);
   const ctx = canvas.getContext("2d");
   drawPanel(ctx, cardW, cardH);
 
-  const labels = ["Not Configured", "Running", "CPU Only", "Stopped"];
-  const files = ["ec2-not-configured.png", "ec2-running.png", "ec2-cpu-only.png", "ec2-stopped.png"];
-
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < labels.length; i += 1) {
     const x = startX + i * (slotW + gap);
 
     ctx.fillStyle = "#dadce5";
@@ -721,6 +906,28 @@ const main = async () => {
       state: "running",
       metrics: { cpu: 61 },
       footer: "healthy"
+    })
+  );
+  writePng(
+    "ec2-cpu-chart.png",
+    await renderEc2Frame({
+      title: "web-01",
+      state: "running",
+      metrics: {},
+      footer: "healthy",
+      series: sampleChartSeries(),
+      modeLabel: "CPU"
+    })
+  );
+  writePng(
+    "ec2-impaired.png",
+    await renderEc2Frame({
+      title: "web-01",
+      state: "running",
+      metrics: {},
+      footer: "impaired",
+      series: sampleChartSeries(),
+      modeLabel: "CPU"
     })
   );
   writePng(

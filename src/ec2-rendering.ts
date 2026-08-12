@@ -3,7 +3,23 @@ import streamDeck from '@elgato/streamdeck';
 import { type Canvas, type CanvasRenderingContext2D, createCanvas, type Image, loadImage } from '@napi-rs/canvas/node-canvas.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { availableMetrics, classifyInstanceState, type Ec2Footer, type Ec2Metrics } from './ec2-metrics';
+import {
+	buildChartSegments,
+	CHART_GAP_MS,
+	type ChartBox,
+	hasChartData,
+	latestValue,
+} from './ec2-chart';
+import {
+	availableMetrics,
+	chartMetricKey,
+	classifyInstanceState,
+	type Ec2DisplayMode,
+	type Ec2Footer,
+	type Ec2Metrics,
+	type Ec2Series,
+	metricLabel,
+} from './ec2-metrics';
 
 // Iconify line-md 靜態圖示路徑定義
 type IconPathDef = { d: string; opacity?: number };
@@ -25,6 +41,17 @@ const METRIC_BAR_X = 46; // 與 label 留小間隔
 const METRIC_BAR_RIGHT = 98;
 const METRIC_PERCENT_X = 104; // 緊接進度條右側（左對齊，固定小間隔，10%/100% 一致）
 const METRIC_BAR_HEIGHT = 12;
+
+// 線圖模式版面：名稱獨佔第一行（置中，與 all 模式一致），其下為滿版線圖，
+// footer 右側改放「模式標示＋目前數值」——線圖本身就是時間軸，不會有 loading
+// 狀態要表達，故該位置的狀態圖示讓給數值
+const CHART_META_RIGHT = 138;
+const CHART_META_GAP = 6; // 模式標示與數值之間的間隔
+// 線圖上緣與 all 模式的指標列（ROWS_TOP）對齊
+const CHART_BOX: ChartBox = { left: 4, top: 44, width: 136, height: 68 };
+const CHART_LINE_WIDTH = 2.5;
+const CHART_TIP_RADIUS = 3;
+const NO_CHART_DATA_LABEL = 'NO DATA';
 
 // Footer（時間 + 狀態圖示）
 const FOOTER_TEXT_Y = 124;
@@ -62,6 +89,7 @@ const TITLE_MAX_TEXT_WIDTH = 106; // 名稱最大寬度（扣掉狀態點與間�
 /**
  * 繪製「狀態點 + 名稱」整組並水平置中：
  * 狀態點在名稱前方，量測文字寬度後把整組置中。
+ * all 與線圖兩種模式共用同一套標題排版。
  */
 const drawTitleWithState = (ctx: CanvasRenderingContext2D, title: string, state: string): void => {
 	ctx.font = 'bold 24px sans-serif';
@@ -208,6 +236,143 @@ const getUsageColor = (pct: number): string => {
 };
 
 /**
+ * 把 #rrggbb 轉成帶透明度的 rgba()，供線圖的漸層填充使用
+ */
+const hexToRgba = (hex: string, alpha: number): string => {
+	const r = Number.parseInt(hex.slice(1, 3), 16);
+	const g = Number.parseInt(hex.slice(3, 5), 16);
+	const b = Number.parseInt(hex.slice(5, 7), 16);
+	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+/**
+ * 線圖模式的 footer：時間靠左（與 all 模式相同），右側原本的狀態圖示位置
+ * 改放「模式標示（CPU/MEM/DSK）＋目前數值」。
+ * 數值先靠右定位，模式標示再貼著它的左側，數值長短變化時標示不會浮動。
+ */
+const drawChartFooter = (
+	ctx: CanvasRenderingContext2D,
+	timeText: string,
+	modeLabel: string,
+	value?: number
+): void => {
+	ctx.fillStyle = 'white';
+	ctx.font = '18px sans-serif';
+	ctx.textAlign = 'left';
+	ctx.fillText(timeText, 8, FOOTER_TEXT_Y);
+
+	const valueText = value !== undefined ? `${value}%` : '--';
+	ctx.textAlign = 'right';
+	ctx.font = 'bold 18px sans-serif';
+	// 數值與折線同色，一眼看出健康度
+	ctx.fillStyle = value !== undefined ? getUsageColor(value) : '#9ca3af';
+	const valueWidth = ctx.measureText(valueText).width;
+	ctx.fillText(valueText, CHART_META_RIGHT, FOOTER_TEXT_Y);
+
+	ctx.font = 'bold 14px sans-serif';
+	ctx.fillStyle = '#9ca3af';
+	// 字級較小，下推 2px 與數值視覺對齊
+	ctx.fillText(modeLabel, CHART_META_RIGHT - valueWidth - CHART_META_GAP, FOOTER_TEXT_Y + 2);
+};
+
+/**
+ * 繪製心電圖線圖：底線基準＋面積漸層＋折線＋末端亮點。
+ * 資料缺口由 buildChartSegments 斷成多段，不會連成一條假的連續線。
+ */
+const drawSparkline = (ctx: CanvasRenderingContext2D, series: Ec2Series): void => {
+	const box = CHART_BOX;
+	const segments = buildChartSegments(series, box, CHART_GAP_MS);
+	const color = getUsageColor(latestValue(series) ?? 0);
+	const bottom = box.top + box.height;
+
+	// 基準底線，讓折線有依託（不畫 70/90 閾值線，144px 上太雜）
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+	ctx.lineWidth = 1;
+	ctx.beginPath();
+	ctx.moveTo(box.left, bottom);
+	ctx.lineTo(box.left + box.width, bottom);
+	ctx.stroke();
+
+	const gradient = ctx.createLinearGradient(0, box.top, 0, bottom);
+	gradient.addColorStop(0, hexToRgba(color, 0.38));
+	gradient.addColorStop(1, hexToRgba(color, 0));
+
+	for (const segment of segments) {
+		// 單點的段沒有線可畫，點一個小圓表示該時刻有資料
+		if (segment.length === 1) {
+			ctx.fillStyle = color;
+			ctx.beginPath();
+			ctx.arc(segment[0].x, segment[0].y, CHART_LINE_WIDTH / 2, 0, Math.PI * 2);
+			ctx.fill();
+			continue;
+		}
+
+		// 面積填充
+		ctx.fillStyle = gradient;
+		ctx.beginPath();
+		ctx.moveTo(segment[0].x, bottom);
+		for (const point of segment) {
+			ctx.lineTo(point.x, point.y);
+		}
+		ctx.lineTo(segment[segment.length - 1].x, bottom);
+		ctx.closePath();
+		ctx.fill();
+
+		// 折線本身
+		ctx.strokeStyle = color;
+		ctx.lineWidth = CHART_LINE_WIDTH;
+		ctx.lineJoin = 'round';
+		ctx.lineCap = 'round';
+		ctx.beginPath();
+		segment.forEach((point, index) => {
+			if (index === 0) {
+				ctx.moveTo(point.x, point.y);
+			} else {
+				ctx.lineTo(point.x, point.y);
+			}
+		});
+		ctx.stroke();
+	}
+
+	// 末端亮點標出「現在」
+	const tip = segments.at(-1)?.at(-1);
+	if (tip) {
+		ctx.fillStyle = color;
+		ctx.beginPath();
+		ctx.arc(tip.x, tip.y, CHART_TIP_RADIUS, 0, Math.PI * 2);
+		ctx.fill();
+	}
+};
+
+/**
+ * status check 為 impaired 時的線圖：整條壓在 0 並轉為灰色。
+ * 這時實例雖然還是 running，指標已不可信，刻意不呈現任何實際數值
+ *（footer 的數字同步改為 --），一眼就能和正常波形區分。
+ */
+const drawImpairedChart = (ctx: CanvasRenderingContext2D): void => {
+	const box = CHART_BOX;
+	const bottom = box.top + box.height;
+	ctx.strokeStyle = '#9ca3af';
+	ctx.lineWidth = CHART_LINE_WIDTH;
+	ctx.lineCap = 'round';
+	ctx.beginPath();
+	ctx.moveTo(box.left, bottom);
+	ctx.lineTo(box.left + box.width, bottom);
+	ctx.stroke();
+};
+
+/**
+ * 線圖模式下 running 卻沒有資料（未裝 CloudWatch Agent、或剛開機還沒生出資料點）
+ */
+const drawNoChartData = (ctx: CanvasRenderingContext2D): void => {
+	ctx.fillStyle = '#9ca3af';
+	ctx.font = 'bold 20px sans-serif';
+	ctx.textAlign = 'center';
+	// 置於線圖區縱向中央
+	ctx.fillText(NO_CHART_DATA_LABEL, 72, CHART_BOX.top + CHART_BOX.height / 2 - 10, 132);
+};
+
+/**
  * 繪製指標列：label（左）＋使用率條（中）＋百分比（右）。
  * 依列數在縱向區帶內均分置中。
  */
@@ -305,6 +470,8 @@ export type Ec2FrameSpec = {
 	rotationDeg: number;
 	borderColor?: string | null;
 	borderWidth?: number; // 可選：外框線寬（px），未給用預設值
+	displayMode?: Ec2DisplayMode; // 未給視為 all（現況的多指標橫條）
+	series?: Ec2Series; // 線圖模式的時間序列
 };
 
 // 幀快取：與 CodePipeline 相同策略，唯一隨時間變動的是 HH:mm，
@@ -323,14 +490,21 @@ const getCachedFrame = (key: string): string | undefined => {
 
 const metricsKey = (metrics: Ec2Metrics): string => `${metrics.cpu ?? ''},${metrics.mem ?? ''},${metrics.disk ?? ''}`;
 
+// 序列的每個值都會影響畫面，故整串進快取 key；視窗右緣也要納入
+// （同一批資料在不同時間點的 x 位置不同）。每分鐘整個快取會被清空，不會無限長大。
+const seriesKey = (series?: Ec2Series): string =>
+	series ? `${series.windowEndMs}:${series.points.map(point => point.v).join(',')}` : '';
+
 /**
  * 繪製 EC2 狀態畫面，回傳 base64 data URL（有快取）。
- * running 且有指標 → 畫指標列；其餘 → 畫大字狀態。
+ * all 模式：running 且有指標 → 指標列；其餘 → 大字狀態。
+ * 線圖模式：running → 線圖（無資料時 NO DATA）；非 running → 與 all 模式相同的大字狀態。
  */
 export const renderFrame = async (spec: Ec2FrameSpec): Promise<string> => {
-	const hasMetrics = availableMetrics(spec.metrics).length > 0;
+	const chartKey = chartMetricKey(spec.displayMode ?? 'all');
+	const isRunning = classifyInstanceState(spec.state) === 'running';
 	const borderWidth = spec.borderWidth ?? DEFAULT_BORDER_WIDTH;
-	const key = `${spec.title}|${spec.state}|${metricsKey(spec.metrics)}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}|${borderWidth}`;
+	const key = `${spec.title}|${spec.state}|${metricsKey(spec.metrics)}|${spec.footer}|${spec.rotationDeg}|${spec.borderColor ?? ''}|${borderWidth}|${spec.displayMode ?? 'all'}|${seriesKey(spec.series)}`;
 	const cached = getCachedFrame(key);
 	if (cached) {
 		return cached;
@@ -342,13 +516,28 @@ export const renderFrame = async (spec: Ec2FrameSpec): Promise<string> => {
 	ctx.translate(CONTENT_INSET, CONTENT_INSET);
 	ctx.scale(scale, scale);
 
-	drawTitleWithState(ctx, spec.title, spec.state);
-	if (hasMetrics) {
-		drawMetricRows(ctx, spec.metrics);
+	if (chartKey && isRunning) {
+		// 線圖模式：數值一律取自序列末端，與線圖末端必然一致
+		const impaired = spec.footer === 'impaired';
+		drawTitleWithState(ctx, spec.title, spec.state);
+		if (impaired) {
+			drawImpairedChart(ctx);
+		} else if (hasChartData(spec.series) && spec.series) {
+			drawSparkline(ctx, spec.series);
+		} else {
+			drawNoChartData(ctx);
+		}
+		// impaired 時不給值，footer 會顯示灰色的 --
+		drawChartFooter(ctx, frameCacheTime, metricLabel(chartKey), impaired ? undefined : latestValue(spec.series));
 	} else {
-		drawStateLabel(ctx, spec.state, spec.rotationDeg);
+		drawTitleWithState(ctx, spec.title, spec.state);
+		if (availableMetrics(spec.metrics).length > 0) {
+			drawMetricRows(ctx, spec.metrics);
+		} else {
+			drawStateLabel(ctx, spec.state, spec.rotationDeg);
+		}
+		await drawFooter(ctx, spec.footer, frameCacheTime, spec.rotationDeg);
 	}
-	await drawFooter(ctx, spec.footer, frameCacheTime, spec.rotationDeg);
 
 	ctx.restore();
 

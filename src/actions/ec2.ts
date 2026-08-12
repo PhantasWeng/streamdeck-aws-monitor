@@ -28,6 +28,7 @@ import {
 	getBorderWidth,
 	getButtonTitle,
 	getCloudWatchUrl,
+	getDisplayMode,
 	hasRequiredSettings,
 	isDebugMode,
 	normalizeSettings,
@@ -149,7 +150,9 @@ const startMonitoring = (ev: ButtonEvent): void => {
 	clearRefreshTimer(state);
 
 	const debug = isDebugMode(settings);
-	state.ec2Fetcher = debug ? createDebugFetcher() : () => fetchEc2Snapshot(state, settings);
+	state.ec2Fetcher = debug
+		? createDebugFetcher(getDisplayMode(settings))
+		: () => fetchEc2Snapshot(state, settings);
 	// debug 模式快輪與慢輪都用短間隔，方便快速觀察狀態切換
 	const intervals: PollIntervals = debug
 		? { fast: DEBUG_STEP_INTERVAL, idle: DEBUG_STEP_INTERVAL }
@@ -206,6 +209,8 @@ const pollOnce = async (ev: ButtonEvent, settings: Ec2MonitorSettings, intervals
 						rotationDeg: state.loadingAngle ?? 0,
 						borderColor: getBorderColorHex(settings),
 						borderWidth: getBorderWidth(settings),
+						displayMode: getDisplayMode(settings),
+						series: snapshot.series,
 					})
 				);
 			} catch (error) {
