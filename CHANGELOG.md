@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [1.5.0.0] - 2026-07-30
+## [1.5.0.0] - 2026-08-13
 
 ### Bug Fixes
 
@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file.
 
 ### Features
 
+- add single-metric chart display mode for the EC2 action (c2dc820)
 - generate CI release notes from tag range and guard bump preconditions (332e0d9)
 - add configurable border width for CodePipeline and EC2 buttons (d6e82e0)
 
